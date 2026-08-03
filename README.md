@@ -208,20 +208,24 @@ private repo. Everything after runs from the repo.
 python deploy/deploy_project.py --run
 ```
 
-### Trial-safe install (no internet)
+### How the Notebooks get LakeLogic
 
-Trial accounts can't use External Access Integrations, so the Notebooks **can't**
-`pip install` from the internet. Instead they install LakeLogic + pure-python deps from a
-**wheelhouse staged in Snowflake** (`@PIPELINE.WHEELS`, populated from `wheelhouse/`) with
-`pip --no-index`; the container runtime already ships pandas/pydantic/pyyaml/snowflake-
-connector. The staged wheel is a LakeLogic build carrying the two Snowflake-engine fixes
-used here (`set_shared_connection` + `TRY_CAST`→`TO_VARCHAR`).
+The medallion needs **`lakelogic>=1.41.0`** (the Snowflake-engine fixes:
+`set_shared_connection` + `TRY_CAST`→`TO_VARCHAR`). How it installs depends on how the
+notebook runs:
 
-> On a **paid** account you can skip the wheelhouse — Snowflake's internal PyPI mirror
-> serves `pip install lakelogic` directly (once those fixes are on PyPI).
->
+- **Headless (Task DAG / `EXECUTE NOTEBOOK`)** — Snowflake's internal PyPI mirror is **not**
+  available in headless runs, so notebooks install from a **wheelhouse staged in Snowflake**
+  (`@PIPELINE.WHEELS`, populated from `wheelhouse/`) with `pip --no-index`. This is the path
+  the Task DAG uses. The container runtime already ships pandas/pydantic/pyyaml/snowflake-
+  connector, so only `lakelogic` + `loguru` + `sqlglot` are staged.
+- **Interactive (you click Run in the notebook)** — the internal PyPI mirror *is* available,
+  so `pip install lakelogic>=1.41.0` works directly (no wheelhouse). Trial accounts can't use
+  External Access Integrations, but the internal mirror is a separate, always-available proxy.
+
 > Container-runtime Notebooks need compute pools (available on the trial). The local
-> `deploy/deploy.py` path needs neither compute pools nor staged wheels.
+> `deploy/deploy.py` path needs neither compute pools nor staged wheels — it runs the same
+> `runtime/` code from your machine.
 
 ### How LANDING would be fed in production
 
