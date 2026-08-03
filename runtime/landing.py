@@ -29,7 +29,9 @@ def generate_marketplace(landing_root):
 GENERATORS = {("marketplace", "rideflow"): generate_marketplace}
 
 
-LANDING_STAGE = "LANDING.LANDING"   # internal stage (a "volume") with a directory table
+def _stage_name(domain):
+    # One internal stage per domain ("volume"), e.g. LANDING.LANDING_MARKETPLACE.
+    return f"LANDING.LANDING_{domain.upper()}"
 
 
 def _read_entity_frame(entity_dir):
@@ -56,48 +58,62 @@ def _load_frame_direct(conn, db, table, df):
                  auto_create_table=True, overwrite=True, quote_identifiers=True)
 
 
-def _load_frame_via_stage(conn, db, table, df, log):
-    """Native 'volume' path: write CSV → PUT to the internal stage (a directory-table
-    stage) → COPY INTO an all-VARCHAR LANDING.<table>. Mirrors real ingestion (files
-    land, then load) and leaves the files browsable in Snowsight + a COPY_HISTORY."""
-    import os, tempfile
+def _load_partitioned_via_stage(conn, db, domain, system, gen_dir, log):
+    """Native 'volume' path that mirrors the Databricks/Fabric demos: PUT the simulator's
+    files into the per-domain stage **preserving the Hive-style partition tree**
+    (<entity>/y_YYYY/m_MM/d_DD/h_HH/batch_*.csv), then COPY INTO an all-VARCHAR
+    LANDING.<system>_<entity> recursively. Files stay browsable in Snowsight + COPY_HISTORY."""
+    stage = _stage_name(domain)
     cur = conn.cursor()
-    cur.execute(f"CREATE STAGE IF NOT EXISTS {db}.{LANDING_STAGE} DIRECTORY = (ENABLE = TRUE)")
-    tmpdir = tempfile.mkdtemp()
-    path = os.path.join(tmpdir, f"{table}.csv")
-    df.to_csv(path, index=False)                       # header + same column order as the table
-    uri = "file://" + path.replace("\\", "/")
-    cur.execute(f"PUT '{uri}' @{db}.{LANDING_STAGE}/{table}/ AUTO_COMPRESS = TRUE OVERWRITE = TRUE")
-    cols = ", ".join(f'"{c}" VARCHAR' for c in df.columns)
-    cur.execute(f"CREATE OR REPLACE TABLE {db}.LANDING.{table} ({cols})")
+    cur.execute(f"CREATE STAGE IF NOT EXISTS {db}.{stage} DIRECTORY = (ENABLE = TRUE)")
     fmt = "(TYPE=CSV SKIP_HEADER=1 FIELD_OPTIONALLY_ENCLOSED_BY='\"' EMPTY_FIELD_AS_NULL=FALSE)"
-    cur.execute(f"COPY INTO {db}.LANDING.{table} FROM @{db}.{LANDING_STAGE}/{table}/ "
-                f"FILE_FORMAT = {fmt} ON_ERROR = ABORT_STATEMENT")
-    log(f"    LANDING.{table} (@{LANDING_STAGE}): {len(df)} rows")
+    gen_root = Path(gen_dir)
+    loaded = []
+    for entity_dir in sorted(p for p in gen_root.iterdir() if p.is_dir()):
+        entity = entity_dir.name
+        files = sorted(entity_dir.rglob("*.csv"))
+        if not files:
+            continue
+        # PUT each batch preserving its <entity>/y_/m_/d_/h_/ path (AUTO_COMPRESS off so
+        # the .csv files stay visible in the stage, matching the Fabric/Databricks layout).
+        for f in files:
+            rel_dir = f.parent.relative_to(gen_root).as_posix()
+            uri = "file://" + str(f).replace("\\", "/")
+            cur.execute(f"PUT '{uri}' @{db}.{stage}/{rel_dir}/ AUTO_COMPRESS = FALSE OVERWRITE = TRUE")
+        # Table: UPPERCASE columns from the batch header; COPY loads positionally.
+        header = files[0].read_text(encoding="utf-8").splitlines()[0].split(",")
+        cols = ", ".join(f'"{c.strip().upper()}" VARCHAR' for c in header)
+        table = f"{system}_{entity}".upper()
+        cur.execute(f"CREATE OR REPLACE TABLE {db}.LANDING.{table} ({cols})")
+        cur.execute(f"COPY INTO {db}.LANDING.{table} FROM @{db}.{stage}/{entity}/ "
+                    f"FILE_FORMAT = {fmt} PATTERN = '.*[.]csv' ON_ERROR = ABORT_STATEMENT")
+        cur.execute(f"SELECT COUNT(*) FROM {db}.LANDING.{table}")
+        n = cur.fetchone()[0]
+        loaded.append((table, n))
+        log(f"    LANDING.{table} (@{stage}/{entity}/y_/m_/d_/h_): {n} rows")
+    if loaded:
+        cur.execute(f"ALTER STAGE {db}.{stage} REFRESH")   # so files show in Snowsight
+    return loaded
 
 
-def load_landing(conn, db, system, gen_dir, log=print, via_stage=False):
+def load_landing(conn, db, domain, system, gen_dir, log=print, via_stage=False):
     """Load each generated entity into LANDING.<system>_<entity> (all VARCHAR).
 
-    via_stage=False: direct write_pandas (fast).
-    via_stage=True:  PUT to the LANDING stage + COPY INTO (the native volume flow).
+    via_stage=False: direct write_pandas (fast; concatenates the partitions).
+    via_stage=True:  PUT the partitioned files to LANDING_<DOMAIN> + COPY INTO (the native
+                     volume flow, preserving the y_/m_/d_/h_ tree like Databricks/Fabric).
     """
+    if via_stage:
+        return _load_partitioned_via_stage(conn, db, domain, system, gen_dir, log)
     loaded = []
     for entity_dir in sorted(p for p in Path(gen_dir).iterdir() if p.is_dir()):
         df = _read_entity_frame(entity_dir)
         if df is None:
             continue
         table = f"{system}_{entity_dir.name}".upper()
-        if via_stage:
-            _load_frame_via_stage(conn, db, table, df, log)
-        else:
-            _load_frame_direct(conn, db, table, df)
-            log(f"    LANDING.{table}: {len(df)} rows")
+        _load_frame_direct(conn, db, table, df)
+        log(f"    LANDING.{table}: {len(df)} rows")
         loaded.append((table, len(df)))
-    if via_stage and loaded:
-        # Refresh the directory table so the staged files show in Snowsight's Stage Files
-        # (an internal-stage directory table doesn't auto-update after a SQL PUT).
-        conn.cursor().execute(f"ALTER STAGE {db}.{LANDING_STAGE} REFRESH")
     return loaded
 
 
@@ -109,4 +125,4 @@ def load_system_landing(conn, db, domain, system, log=print, via_stage=False):
         return []
     with tempfile.TemporaryDirectory() as tmp:
         gen(tmp)
-        return load_landing(conn, db, system, tmp, log=log, via_stage=via_stage)
+        return load_landing(conn, db, domain, system, tmp, log=log, via_stage=via_stage)
