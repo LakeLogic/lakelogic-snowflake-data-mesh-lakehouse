@@ -107,6 +107,16 @@ def main():
         MIN_NODES = 1 MAX_NODES = 1 INSTANCE_FAMILY = CPU_X64_XS
         AUTO_SUSPEND_SECS = 300""")
 
+    print("── Stage the LakeLogic wheelhouse (trial-safe, no internet) ─")
+    # Trial accounts can't use External Access Integrations, so notebooks can't pip from
+    # the internet. Stage LakeLogic (fixed branch) + pure-python deps as wheels; notebooks
+    # install with pip --no-index. The container runtime ships pandas/pydantic/pyyaml/etc.
+    run(cur, f"CREATE STAGE IF NOT EXISTS {db}.PIPELINE.WHEELS")
+    wheelhouse = REPO / "wheelhouse"
+    for whl in sorted(wheelhouse.glob("*.whl")):
+        uri = "file://" + str(whl).replace("\\", "/")
+        run(cur, f"PUT '{uri}' @{db}.PIPELINE.WHEELS AUTO_COMPRESS = FALSE OVERWRITE = TRUE")
+
     print("── Notebooks (from Git repo) ────────────────────────────────")
     stage = f"@{db}.PIPELINE.RIDEFLOW_REPO/branches/{args.branch}/notebooks/"
     for name, fname in NOTEBOOKS:
