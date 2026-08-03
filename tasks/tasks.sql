@@ -19,8 +19,9 @@ USE SCHEMA PIPELINE;
 -- SCHEDULE to run nightly). Resumes the graph; children fire via AFTER.
 CREATE OR REPLACE TASK T_RIDEFLOW_MARKETPLACE
   WAREHOUSE = {{WH}}
-  COMMENT   = 'RideFlow marketplace medallion — root'
-  AS SELECT 1;   -- no-op anchor; provision runs next
+  SCHEDULE  = 'USING CRON 0 3 * * * UTC'
+  COMMENT   = 'RideFlow marketplace medallion root - nightly 0300 UTC or on demand'
+  AS SELECT 1;
 
 CREATE OR REPLACE TASK T_00_PROVISION
   WAREHOUSE = {{WH}}

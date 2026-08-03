@@ -118,6 +118,13 @@ def main():
         run(cur, f"ALTER NOTEBOOK {db}.PIPELINE.{name} ADD LIVE VERSION FROM LAST")
 
     print("── Task DAG ─────────────────────────────────────────────────")
+    # Suspend any existing tasks first so CREATE OR REPLACE won't fail on resumed
+    # dependents (a task with active/resumed children can't be replaced).
+    for t in TASK_RESUME_ORDER:
+        try:
+            cur.execute(f"ALTER TASK IF EXISTS {db}.PIPELINE.{t} SUSPEND")
+        except Exception:
+            pass
     tsql = (REPO / "tasks" / "tasks.sql").read_text(encoding="utf-8")
     tsql = tsql.replace("{{DB}}", db).replace("{{WH}}", wh)
     for stmt in sql_statements(tsql):
