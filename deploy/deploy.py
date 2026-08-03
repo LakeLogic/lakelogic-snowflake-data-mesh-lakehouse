@@ -118,6 +118,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--domain", default="", help="only run <domain>/<system>")
     ap.add_argument("--setup-only", action="store_true")
+    ap.add_argument("--via-stage", action="store_true",
+                    help="land via the internal stage (PUT + COPY INTO) instead of direct load")
     args = ap.parse_args()
     load_env()
     db = os.getenv("SNOWFLAKE_DATABASE", "RIDEFLOW_DEV_DEMO")
@@ -142,7 +144,7 @@ def main():
         print(f"  ▶ {d}/{s}")
         if (d, s) not in GENERATORS:
             print(f"    ⏩ no generator yet for {d}/{s} — skipping"); continue
-        load_system_landing(conn, db, d, s)
+        load_system_landing(conn, db, d, s, via_stage=args.via_stage)
         run_and_persist(conn, db, sy)
     print("✅ Snowflake RideFlow deploy complete.")
 

@@ -8,3 +8,7 @@ __pycache__/
 # secrets
 .env
 deploy/.env
+
+# Snowflake sample/tutorial notebooks (not part of this demo)
+Getting Started with Dynamic Tables.ipynb
+Introduction to Apache Iceberg.ipynb
