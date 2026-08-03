@@ -94,6 +94,10 @@ def load_landing(conn, db, system, gen_dir, log=print, via_stage=False):
             _load_frame_direct(conn, db, table, df)
             log(f"    LANDING.{table}: {len(df)} rows")
         loaded.append((table, len(df)))
+    if via_stage and loaded:
+        # Refresh the directory table so the staged files show in Snowsight's Stage Files
+        # (an internal-stage directory table doesn't auto-update after a SQL PUT).
+        conn.cursor().execute(f"ALTER STAGE {db}.{LANDING_STAGE} REFRESH")
     return loaded
 
 
