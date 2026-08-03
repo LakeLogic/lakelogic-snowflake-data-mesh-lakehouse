@@ -1,0 +1,76 @@
+version: 1.0.0
+info:
+  title: "Silver \u2014 Rideflow Trip Cancellations"
+  table_name: '{silver_layer}_rideflow_trip_cancellations'
+  description: 'Cleaned, typed, deduplicated cancellation events. Joins to `silver_rideflow_trips`
+    (when post-assignment) and `silver_rideflow_trip_requests` (for pre-match cancellations)
+    via trip_id / rider_id.
+
+    '
+  target_layer: silver
+  domain: marketplace
+  system: rideflow
+upstream_contracts:
+- contract: bronze_rideflow_trip_cancellations
+  layer: bronze
+  domain: marketplace
+  system: rideflow
+primary_key:
+- CANCELLATION_ID
+model:
+  fields:
+  - name: CANCELLATION_ID
+    type: string
+    required: true
+  - name: TRIP_ID
+    type: string
+    description: "FK to trips \u2014 null for pre-match cancellations."
+  - name: RIDER_ID
+    type: string
+    required: true
+    pii: true
+    masking: hash
+    foreign_key:
+      contract: '{silver_layer}_rideflow_rider_profiles'
+      column: RIDER_ID
+  - name: DRIVER_ID
+    type: string
+    pii: true
+    masking: hash
+    foreign_key:
+      contract: '{silver_layer}_rideflow_driver_profiles'
+      column: DRIVER_ID
+  - name: CANCELLED_BY
+    type: string
+    description: rider | driver
+  - name: CANCEL_REASON_CODE
+    type: string
+  - name: CITY_CODE
+    type: string
+  - name: REQUESTED_AT
+    type: timestamp
+  - name: CANCELLED_AT
+    type: timestamp
+    required: true
+  - name: CANCELLATION_FEE
+    type: float
+quality:
+  row_rules:
+  - name: cancellation_id_not_null
+    sql: cancellation_id IS NOT NULL
+  - name: valid_cancelled_by
+    sql: cancelled_by IS NULL OR cancelled_by IN ('rider','driver')
+  - name: cancelled_after_requested
+    sql: requested_at IS NULL OR cancelled_at IS NULL OR cancelled_at >= requested_at
+  dataset_rules:
+  - unique: CANCELLATION_ID
+transformations:
+- deduplicate:
+    by:
+    - CANCELLATION_ID
+    sort_by:
+    - CANCELLATION_ID
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_trip_cancellations
+  load_mode: full

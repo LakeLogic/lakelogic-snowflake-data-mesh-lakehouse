@@ -1,0 +1,90 @@
+version: 1.0.0
+info:
+  title: "Silver \u2014 Google Analytics App Events"
+  table_name: '{silver_layer}_google_analytics_app_events'
+  description: 'Cleaned, typed, deduplicated GA4 app event stream. Each row is a user
+    interaction. user_id / device_id / ip_address are masked at Silver; user_pseudo_id
+    (GA4 anonymous client ID) is preserved un-masked so downstream funnel marts can
+    stitch session journeys.
+
+    '
+  target_layer: silver
+  domain: marketing
+  system: google_analytics
+upstream_contracts:
+- contract: bronze_google_analytics_app_events
+  layer: bronze
+  domain: marketing
+  system: google_analytics
+primary_key:
+- EVENT_TIMESTAMP
+- EVENT_NAME
+- USER_PSEUDO_ID
+model:
+  fields:
+  - name: EVENT_NAME
+    type: string
+    required: true
+  - name: EVENT_TIMESTAMP
+    type: timestamp
+    required: true
+  - name: EVENT_DATE
+    type: date
+    description: Derived from event_timestamp at Silver.
+  - name: USER_PSEUDO_ID
+    type: string
+    required: true
+    description: "GA4 anonymous client ID. NOT masked \u2014 needed for funnel stitching."
+  - name: USER_ID
+    type: string
+    pii: true
+    masking: hash
+  - name: DEVICE_ID
+    type: string
+    pii: true
+    masking: hash
+  - name: IP_ADDRESS
+    type: string
+    pii: true
+    masking: redact
+  - name: DEVICE_CATEGORY
+    type: string
+    description: mobile | tablet | desktop
+  - name: DEVICE_OS
+    type: string
+  - name: GEO_COUNTRY
+    type: string
+  - name: GEO_CITY
+    type: string
+  - name: APP_VERSION
+    type: string
+  - name: EVENT_PARAMS_JSON
+    type: string
+    description: Raw event parameters as JSON string for downstream extraction.
+quality:
+  row_rules:
+  - name: event_name_not_null
+    sql: event_name IS NOT NULL
+  - name: pseudo_id_not_null
+    sql: user_pseudo_id IS NOT NULL
+  - name: valid_device_category
+    sql: device_category IS NULL OR device_category IN ('mobile','tablet','desktop')
+  dataset_rules:
+  - unique:
+    - EVENT_TIMESTAMP
+    - EVENT_NAME
+    - USER_PSEUDO_ID
+transformations:
+- deduplicate:
+    by:
+    - EVENT_TIMESTAMP
+    - EVENT_NAME
+    - USER_PSEUDO_ID
+    sort_by:
+    - EVENT_TIMESTAMP
+    - EVENT_NAME
+    - USER_PSEUDO_ID
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_app_events
+  load_mode: full

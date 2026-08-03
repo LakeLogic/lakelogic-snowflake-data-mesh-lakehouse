@@ -1,0 +1,65 @@
+version: 1.0.0
+info:
+  title: "Gold \u2014 Dim Date"
+  table_name: '{gold_layer}_internal_dim_date'
+  description: 'Canonical date dimension covering 2020-01-01 .. 2030-12-31. Materialized
+    entirely by a Python generator (no upstream source); the bootstrap seed file is
+    empty. Used by every fact_ table that needs date attributes.
+
+    '
+  target_layer: gold
+  domain: reference
+  system: internal
+model:
+  fields:
+  - name: DATE_KEY
+    type: int
+    required: true
+    description: Numeric key (YYYYMMDD)
+  - name: FULL_DATE
+    type: date
+    required: true
+  - name: YEAR
+    type: int
+  - name: QUARTER
+    type: int
+  - name: MONTH
+    type: int
+  - name: MONTH_NAME
+    type: string
+  - name: DAY
+    type: int
+  - name: DAY_OF_WEEK
+    type: int
+  - name: DAY_NAME
+    type: string
+  - name: IS_WEEKEND
+    type: boolean
+  - name: ISO_WEEK
+    type: int
+  - name: IS_HOLIDAY_US
+    type: boolean
+  - name: IS_HOLIDAY_UK
+    type: boolean
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: DATE_KEY
+primary_key:
+- DATE_KEY
+source:
+  type: landing
+  path: '{landing_root}/dim_date_seed'
+  format: csv
+  options:
+    header: 'true'
+  load_mode: full
+  watermark_strategy: none
+external_logic:
+  type: python
+  path: ../../_generators/dim_date.py
+  entrypoint: run
+  args:
+    start_date: '2020-01-01'
+    end_date: '2030-12-31'
+    fiscal_year_start_month: 4

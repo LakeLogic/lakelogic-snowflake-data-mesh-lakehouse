@@ -1,0 +1,76 @@
+version: 1.0.0
+info:
+  title: "Gold \u2014 Dim City (SCD2)"
+  table_name: '{gold_layer}_internal_dim_city'
+  description: 'Slowly Changing Dimension (Type 2) for operating cities. Tracks history
+    when geofence or active status changes. Every fact that references city_code keys
+    via (city_code, effective_from .. effective_to).
+
+    '
+  target_layer: gold
+  domain: reference
+  system: internal
+model:
+  fields:
+  - name: CITY_SK
+    type: long
+    required: true
+    description: Surrogate key; new for each SCD2 version
+  - name: CITY_CODE
+    type: string
+    required: true
+    description: Business key (stable across versions)
+  - name: CITY_NAME
+    type: string
+  - name: COUNTRY_CODE
+    type: string
+    description: ISO alpha-3 country code (carried through from silver)
+  - name: TIMEZONE
+    type: string
+  - name: DEFAULT_CURRENCY
+    type: string
+  - name: GEOFENCE_WKT
+    type: string
+  - name: IS_ACTIVE
+    type: boolean
+  - name: EFFECTIVE_FROM
+    type: timestamp
+    required: true
+    description: When this version became current
+  - name: EFFECTIVE_TO
+    type: timestamp
+    description: Closed when superseded; NULL for current version
+  - name: IS_CURRENT
+    type: boolean
+    required: true
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: CITY_SK
+primary_key:
+- CITY_CODE
+source:
+  type: table
+  path: table:{domain_catalog}.silver_internal_cities
+  load_mode: full
+transformations:
+- phase: pre
+  sql: "SELECT\n  city_code,\n  city_name,\n  country_code,\n  timezone,\n  default_currency,\n\
+    \  geofence_wkt,\n  is_active\nFROM source\n"
+materialization:
+  strategy: scd2
+  format: delta
+  scd2:
+    surrogate_key: city_sk
+    surrogate_key_strategy: hash
+    effective_from_field: effective_from
+    effective_to_field: effective_to
+    current_flag_field: is_current
+    track_columns:
+    - geofence_wkt
+    - timezone
+    - default_currency
+    - is_active
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'

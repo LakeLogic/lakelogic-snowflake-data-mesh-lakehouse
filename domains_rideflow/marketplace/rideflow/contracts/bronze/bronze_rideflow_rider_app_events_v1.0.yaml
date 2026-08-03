@@ -1,0 +1,54 @@
+version: 1.0.0
+info:
+  title: "Bronze \u2014 RideFlow Rider App Events"
+  table_name: '{bronze_layer}_{system}_rider_app_events'
+  description: 'Raw rider app interaction events from the RideFlow mobile app. Includes
+    screen views, button taps, and in-app actions.
+
+    '
+  target_layer: bronze
+  domain: marketplace
+  system: rideflow
+model:
+  fields:
+  - name: EVENT_ID
+    type: string
+    required: true
+    description: Unique event identifier
+  - name: RIDER_ID
+    type: string
+    required: true
+    description: FK to rider_profiles
+  - name: DEVICE_ID
+    type: string
+    pii: true
+    description: "Mobile device ID \u2014 persistent identifier, treat as PII"
+  - name: IP_ADDRESS
+    type: string
+    pii: true
+    description: "Client IP address \u2014 quasi-identifier under GDPR"
+  - name: EVENT_NAME
+    type: string
+    description: Event type (screen_view, button_tap, search, etc.)
+  - name: SCREEN_NAME
+    type: string
+    description: Screen where event occurred
+  - name: EVENT_TIMESTAMP
+    type: string
+    description: Event timestamp
+  - name: APP_VERSION
+    type: string
+    description: App version string
+  - name: PLATFORM
+    type: string
+    description: ios, android
+  - name: CITY_CODE
+    type: string
+    description: City code at time of event
+  - name: EVENT_PROPERTIES_JSON
+    type: string
+    description: Raw event properties as JSON
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_rider_app_events
+  load_mode: full

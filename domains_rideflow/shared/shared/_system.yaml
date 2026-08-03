@@ -1,0 +1,95 @@
+# ── Shared Cross-Domain System Registry (system-level) ──────────────────────
+# This file defines the contracts for the shared system. The domain-level
+# shared/_system.yaml above holds environment + external_sources config.
+domain: shared
+system: shared
+
+metadata:
+  run_log_table: "{domain_catalog}._pipeline_run_log"
+  run_log_backend: "snowflake"
+  snowflake_database: "{catalog}"
+  snowflake_schema: "{domain}"
+
+storage:
+  domain_catalog: "{catalog}.shared"
+
+contracts:
+  - layer: gold
+    entity: gold_shared_dim_driver_360
+    path: "contracts/{gold_layer}/gold_shared_dim_driver_360_v1.0.yaml"
+    depends_on:
+      - silver_rideflow_driver_profiles
+      - silver_checkr_driver_verifications
+      - silver_stripe_payouts
+    enabled: true
+  - layer: gold
+    entity: gold_shared_fact_revenue_daily
+    path: "contracts/{gold_layer}/gold_shared_fact_revenue_daily_v1.0.yaml"
+    depends_on:
+      - silver_stripe_charges
+      - silver_rideflow_trips
+    enabled: true
+  - layer: gold
+    entity: gold_shared_mart_acquisition_cost
+    path: "contracts/{gold_layer}/gold_shared_mart_acquisition_cost_v1.0.yaml"
+    depends_on:
+      - silver_google_ads_campaigns
+      - silver_meta_ads_campaigns
+      - silver_rideflow_rider_profiles
+    enabled: true
+  - layer: gold
+    entity: gold_shared_mart_marketplace_health
+    path: "contracts/{gold_layer}/gold_shared_mart_marketplace_health_v1.0.yaml"
+    depends_on:
+      - silver_rideflow_trip_requests
+      - silver_rideflow_trips
+      - silver_rideflow_trip_cancellations
+      - silver_stripe_charges
+    enabled: true
+
+lineage:
+  enabled: true
+
+materialization:
+  gold:
+    strategy: overwrite
+    format: delta
+
+server:
+  gold:
+    schema_policy:
+      evolution: append
+      unknown_fields: drop
+
+notifications_enabled: false
+
+x-azure-storage: &azure_storage
+  storage_root: "abfss://nondelta@{storage_account}.dfs.core.windows.net"
+  data_root: "abfss://shared@{storage_account}.dfs.core.windows.net"
+  quarantine_root: "abfss://quarantine@{storage_account}.dfs.core.windows.net"
+
+environments:
+  dev:
+    catalog: "${SNOWFLAKE_DATABASE}"
+    storage_account: "${RIDEFLOW_DEV_STORAGE_ACCOUNT}"
+    <<: *azure_storage
+  local:
+    catalog: "local"
+    storage_root: "./lakehouse"
+    data_root: "./lakehouse/shared"
+    quarantine_root: "./lakehouse/_quarantine"
+  local_polars:
+    catalog: "local"
+    storage_root: "./lakehouse_polars"
+    data_root: "./lakehouse_polars/shared"
+    quarantine_root: "./lakehouse_polars/_quarantine"
+  local_spark:
+    catalog: "local"
+    storage_root: "./lakehouse_spark"
+    data_root: "./lakehouse_spark/{domain}"
+    quarantine_root: "./lakehouse_spark/_quarantine"
+  local_duckdb:
+    catalog: "local"
+    storage_root: "./lakehouse_duckdb"
+    data_root: "./lakehouse_duckdb/{domain}"
+    quarantine_root: "./lakehouse_duckdb/_quarantine"

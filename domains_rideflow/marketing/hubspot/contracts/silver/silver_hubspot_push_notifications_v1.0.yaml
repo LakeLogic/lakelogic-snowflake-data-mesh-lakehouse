@@ -1,0 +1,64 @@
+version: 1.0.0
+info:
+  title: "Silver \u2014 HubSpot Push Notifications"
+  table_name: '{silver_layer}_hubspot_push_notifications'
+  description: 'Cleaned, typed, deduplicated push-notification delivery records. Device
+    tokens and rider IDs are masked at Silver; downstream marts join on the masked
+    rider_id which preserves referential integrity.
+
+    '
+  target_layer: silver
+  domain: marketing
+  system: hubspot
+upstream_contracts:
+- contract: bronze_hubspot_push_notifications
+  layer: bronze
+  domain: marketing
+  system: hubspot
+primary_key:
+- NOTIFICATION_ID
+model:
+  fields:
+  - name: NOTIFICATION_ID
+    type: string
+    required: true
+  - name: RIDER_ID
+    type: string
+    pii: true
+    masking: hash
+    foreign_key:
+      contract: '{silver_layer}_rideflow_rider_profiles'
+      column: RIDER_ID
+  - name: DEVICE_TOKEN
+    type: string
+    pii: true
+    masking: hash
+  - name: CAMPAIGN_NAME
+    type: string
+  - name: SENT_AT
+    type: timestamp
+  - name: DELIVERED_AT
+    type: timestamp
+  - name: OPENED_AT
+    type: timestamp
+  - name: PLATFORM
+    type: string
+    description: ios | android
+quality:
+  row_rules:
+  - name: notification_id_not_null
+    sql: notification_id IS NOT NULL
+  - name: valid_platform
+    sql: platform IS NULL OR platform IN ('ios','android')
+  dataset_rules:
+  - unique: NOTIFICATION_ID
+transformations:
+- deduplicate:
+    by:
+    - NOTIFICATION_ID
+    sort_by:
+    - NOTIFICATION_ID
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_push_notifications
+  load_mode: full

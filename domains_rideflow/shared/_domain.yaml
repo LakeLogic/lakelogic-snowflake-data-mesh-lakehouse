@@ -1,0 +1,111 @@
+domain: shared
+
+# ── Domain Ownership ────────────────────────────────────────────────────────
+# Cross-domain Gold marts have no single business owner — the platform
+# data engineering team owns the plumbing while consumers (finance, ops,
+# growth) own the metrics. The contact below is the maintainer of the
+# join logic itself, not the business definitions.
+ownership:
+  domain_owner: Platform Data Engineering
+  team: data_engineering
+  contacts:
+    - name: Platform Data Lead
+      role: oncall
+      email: ${DOMAIN_CONTACT_SHARED:-${DOMAIN_CONTACT_MARKETPLACE}}
+  cost_center: platform_engineering
+  jira_project: KAN
+
+# ── Service Level Objectives (SLOs) ──────────────────────────────────────
+# Shared marts read from already-validated Silver contracts, so freshness
+# expectations relax versus a domain that ingests raw sources.
+slo:
+  freshness:
+    gold:
+      max_delay_minutes: 999999
+      check_column: _lakelogic_processed_at
+  row_count:
+    gold:
+      min_rows: 1
+      warn_only: true
+  quality:
+    min_good_ratio: 0.99
+    max_quarantine_ratio: 0.01
+  schedule:
+    environments: [dev, prod, staging]
+    expected_start_utc: "05:30"
+    expected_completion_utc: "06:00"
+    expected_duration_minutes: 30
+    warn_if_duration_exceeds_minutes: 60
+    timezone: UTC
+
+# ── Cost Governance ──────────────────────────────────────────────────────────
+cost:
+  currency: GBP
+  budget:
+    daily_limit: 10
+    weekly_limit: 50
+    monthly_limit: 150
+    per_run_anomaly_multiplier: 3
+
+# ── Notifications ────────────────────────────────────────────────────────────
+notifications:
+  - type: slack
+    target: "#data-platform-alerts"
+    on_events: [failed]
+  - type: slack
+    target: "#data-platform-slo-alerts"
+    on_events: [slo_breach]
+  - type: email
+    targets:
+      - "platform-data@lakelogic.com"
+    on_events: [failed, slo_breach]
+
+# ── Observatory Telemetry ────────────────────────────────────────────────────
+observatory:
+  enabled: false
+  environments: [dev, prod, staging, local, local_polars]
+  endpoint: "${LAKELOGIC_OBSERVATORY_ENDPOINT}"
+  api_key: "${LAKELOGIC_API_KEY}"
+  emit_on: [success, partial, failed]
+
+# ── Compliance & Privacy ─────────────────────────────────────────────────────
+# Cross-domain marts inherit the strongest constraint of their inputs.
+# Since they aggregate data already governed under each source domain's
+# GDPR posture, the mart itself is treated as `Internal` aggregate
+# reporting and does not store raw PII.
+compliance:
+  sensitivity: Internal
+  purpose: "Cross-domain aggregate reporting (revenue, marketplace health, acquisition cost). No raw PII stored."
+  risk_level: low
+  risk_triggers: []
+  dpo_review_required: false
+  frameworks:
+    gdpr:
+      applicable: true
+      jurisdiction: EU/EEA
+      legal_basis: legitimate_interest
+      special_category_data: false
+      dpia_required: false
+    ai_act:
+      applicable: false
+    hipaa:
+      applicable: false
+    ccpa:
+      applicable: false
+    sox:
+      applicable: false
+  cross_border_transfer: false
+  data_residency: EU
+  erasure:
+    # Erasure cascades from the source domains — these marts must be
+    # rebuilt after any upstream forget_subjects run.
+    strategy: rebuild_from_source
+
+# ── Retention ────────────────────────────────────────────────────────────────
+retention:
+  gold: P7Y
+
+# Layer aliases
+bronze_layer: bronze
+silver_layer: silver
+gold_layer: gold

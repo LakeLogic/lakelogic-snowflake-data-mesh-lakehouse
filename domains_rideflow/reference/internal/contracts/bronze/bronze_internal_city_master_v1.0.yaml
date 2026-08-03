@@ -1,0 +1,46 @@
+version: 1.0.0
+info:
+  title: "Bronze \u2014 Internal City Master"
+  table_name: '{bronze_layer}_{system}_city_master'
+  description: 'Raw city master file from the operations team. Defines every city
+    the platform operates in, with timezone, default currency, country, geofence polygon,
+    surge config, and launch / sunset dates. Periodically reloaded when ops onboards
+    / off-boards a market.
+
+    '
+  target_layer: bronze
+  domain: reference
+  system: internal
+model:
+  fields:
+  - name: CITY_CODE
+    type: string
+    required: true
+    description: Internal stable code (e.g. LON, NYC, BLR)
+  - name: CITY_NAME
+    type: string
+    description: Display name
+  - name: COUNTRY_CODE
+    type: string
+    description: ISO 3166-1 alpha-3 country code
+  - name: TIMEZONE
+    type: string
+    description: IANA timezone (e.g. Europe/London)
+  - name: DEFAULT_CURRENCY
+    type: string
+    description: ISO 4217 currency code
+  - name: GEOFENCE_WKT
+    type: string
+    description: City geofence as WKT polygon
+  - name: LAUNCHED_AT
+    type: string
+    description: Date the city launched on the platform
+  - name: SUNSET_AT
+    type: string
+    description: Date the city was retired (nullable)
+  - name: _LAKELOGIC_PROCESSED_AT
+    type: timestamp
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_city_master
+  load_mode: full

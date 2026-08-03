@@ -1,0 +1,59 @@
+version: 1.0.0
+info:
+  title: "Bronze \u2014 Google Analytics Sessions"
+  table_name: '{bronze_layer}_{system}_sessions'
+  description: 'Raw GA4 session-level data for the RideFlow app and website.
+
+    '
+  target_layer: bronze
+  domain: marketing
+  system: google_analytics
+model:
+  fields:
+  - name: SESSION_ID
+    type: string
+    required: true
+    description: GA4 session ID
+  - name: USER_PSEUDO_ID
+    type: string
+    required: true
+    description: GA4 anonymous client ID
+  - name: USER_ID
+    type: string
+    pii: true
+    description: Authenticated user ID
+  - name: IP_ADDRESS
+    type: string
+    pii: true
+    description: Client IP address
+  - name: SESSION_START
+    type: string
+    description: Session start timestamp
+  - name: SESSION_DURATION_SECONDS
+    type: string
+    description: Total session duration
+  - name: PAGE_VIEWS
+    type: string
+    description: Number of page views
+  - name: TRAFFIC_SOURCE
+    type: string
+    description: Traffic source (google, direct, etc.)
+  - name: TRAFFIC_MEDIUM
+    type: string
+    description: Traffic medium (organic, cpc, email)
+  - name: TRAFFIC_CAMPAIGN
+    type: string
+    description: UTM campaign name
+  - name: DEVICE_CATEGORY
+    type: string
+    description: mobile, desktop, tablet
+  - name: GEO_COUNTRY
+    type: string
+    description: User country
+  - name: LANDING_PAGE
+    type: string
+    description: First page URL
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_sessions
+  load_mode: full

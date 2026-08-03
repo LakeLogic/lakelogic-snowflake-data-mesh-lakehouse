@@ -1,0 +1,87 @@
+version: 1.0.0
+info:
+  title: "Gold \u2014 Fact Rider Daily Metrics"
+  table_name: '{gold_layer}_rideflow_fact_rider_daily_metrics'
+  description: Daily aggregated rider metrics. Can be safely reprocessed and summed
+    over time to calculate Lifetime Value.
+  target_layer: gold
+  domain: marketplace
+  system: rideflow
+source:
+  type: table
+  path: table:{domain_catalog}.silver_rideflow_trips
+  load_mode: full
+primary_key:
+- RIDER_ID
+- ACTIVITY_DATE
+links:
+- name: silver_trips_full
+  path: table:{domain_catalog}.silver_rideflow_trips
+  type: table
+- name: dim_rider
+  path: table:{domain_catalog}.gold_rideflow_dim_rider
+  type: table
+model:
+  fields:
+  - name: RIDER_SK
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_rideflow_dim_rider
+      column: RIDER_SK
+  - name: RIDER_ID
+    type: string
+    required: true
+  - name: ACTIVITY_DATE
+    type: date
+    required: true
+  - name: DAILY_TRIPS
+    type: integer
+  - name: DAILY_SPEND
+    type: float
+  - name: DAILY_TIPS
+    type: float
+  - name: AVG_DAILY_RATING
+    type: float
+transformations:
+- phase: pre
+  sql: "WITH agg AS (\n  SELECT\n      rider_id,\n      DATE(requested_at)       \
+    \  AS activity_date,\n      COUNT(*)                   AS daily_trips,\n     \
+    \ SUM(fare_amount)           AS daily_spend,\n      SUM(tip_amount)          \
+    \  AS daily_tips,\n      AVG(rider_rating)          AS avg_daily_rating\n  --\
+    \ Read the FULL Silver table (via link) so aggregates\n  -- (COUNT, SUM, AVG)\
+    \ include ALL rows for each date \u2014\n  -- not just the incremental slice.\
+    \  The Jinja guard below\n  -- limits WHICH dates are recomputed, then merge upserts\n\
+    \  -- the corrected totals into Gold.\n  FROM silver_trips_full\n  WHERE rider_id\
+    \ IS NOT NULL\n  -- Only re-aggregate dates that received new trips.\n  -- On\
+    \ a full load, `source` contains everything, so this safely selects all dates.\n\
+    \  AND DATE(requested_at) IN (SELECT DISTINCT DATE(requested_at) FROM source)\n\
+    \  GROUP BY rider_id, DATE(requested_at)\n)\n-- SCD2-accurate surrogate-key lookup:\
+    \ match the dim_rider version that was\n-- in effect ON the activity_date, using\
+    \ the half-open interval\n-- [effective_from, effective_to).  Riders absent from\
+    \ the dim (e.g. profile\n-- quarantined at Silver) get the '-1' unknown member,\
+    \ never a NULL/dangling FK.\nSELECT\n    COALESCE(d.rider_sk, '-1')  AS rider_sk,\n\
+    \    a.rider_id,\n    a.activity_date,\n    a.daily_trips,\n    a.daily_spend,\n\
+    \    a.daily_tips,\n    a.avg_daily_rating\nFROM agg a\nLEFT JOIN dim_rider d\n\
+    \  ON  a.rider_id      =  d.rider_id\n  AND a.activity_date >= CAST(d.effective_from\
+    \ AS DATE)\n  AND a.activity_date <  CAST(d.effective_to   AS DATE)\n"
+downstream:
+- type: table
+  name: gold_marketing_funnel
+  platform: databricks
+  owner: analytics-team
+  managed: false
+- type: report
+  name: rider_daily_metrics_dashboard
+  platform: powerbi
+  owner: analytics-team
+  managed: false
+- type: report
+  name: lifetime_value_report
+  platform: powerbi
+  owner: analytics-team
+  managed: false
+- type: api
+  name: Rider Daily Metrics API
+  platform: internal
+  owner: backend-team

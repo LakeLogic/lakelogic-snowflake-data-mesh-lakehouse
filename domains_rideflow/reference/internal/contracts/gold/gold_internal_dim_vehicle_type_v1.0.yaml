@@ -1,0 +1,40 @@
+version: 1.0.0
+info:
+  title: "Gold \u2014 Dim Vehicle Type"
+  table_name: '{gold_layer}_internal_dim_vehicle_type'
+  description: 'Vehicle category dimension (sedan, suv, van, motorcycle, bicycle)
+    with capacity and product-mapping attributes. Joined by trip facts.
+
+    '
+  target_layer: gold
+  domain: reference
+  system: internal
+model:
+  fields:
+  - name: VEHICLE_TYPE_CODE
+    type: string
+    required: true
+    description: Internal stable code (e.g. SEDAN, SUV, MOTO)
+  - name: VEHICLE_TYPE_NAME
+    type: string
+  - name: PASSENGER_CAPACITY
+    type: int
+  - name: PRODUCT_TIER
+    type: string
+    description: RideFlow product surfaced to riders (Economy, Comfort, XL)
+  - name: REQUIRES_INSPECTION
+    type: boolean
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: VEHICLE_TYPE_CODE
+primary_key:
+- VEHICLE_TYPE_CODE
+source:
+  type: landing
+  path: '{landing_root}/dim_vehicle_type_seed'
+  format: csv
+  options:
+    header: 'true'
+  load_mode: full
+  watermark_strategy: none

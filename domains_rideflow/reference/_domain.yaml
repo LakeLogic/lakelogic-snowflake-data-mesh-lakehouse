@@ -1,0 +1,126 @@
+domain: reference
+
+# ── Domain Ownership ────────────────────────────────────────────────────────
+# Reference / lookup data (city master, vehicle types, currency tables, etc.).
+# Owned by the platform team because the contracts are generic enough that
+# changes affect every downstream domain.
+ownership:
+  domain_owner: Platform Data Engineering
+  team: data_engineering
+  contacts:
+    - name: Platform Data Lead
+      role: oncall
+      email: ${DOMAIN_CONTACT_REFERENCE:-${DOMAIN_CONTACT_MARKETPLACE}}
+  cost_center: platform_engineering
+  jira_project: KAN
+
+# ── Service Level Objectives (SLOs) ──────────────────────────────────────
+# Reference data changes infrequently — looser freshness, stricter quality.
+slo:
+  freshness:
+    bronze:
+      max_delay_minutes: 1440   # daily refresh acceptable
+      check_column: _lakelogic_processed_at
+      max_source_delay_minutes: 2880
+      source_check_columns: [updated_at, last_modified, created_at]
+    silver:
+      max_delay_minutes: 1440
+      check_column: _lakelogic_processed_at
+    gold:
+      max_delay_minutes: 999999
+      check_column: _lakelogic_processed_at
+  row_count:
+    bronze:
+      min_rows: 1
+      max_rows: 100000
+      warn_only: true
+    silver:
+      min_rows: 1
+      max_rows: 100000
+      warn_only: true
+  quality:
+    min_good_ratio: 0.999
+    max_quarantine_ratio: 0.001
+    by_severity:
+      critical:
+        min_good_ratio: 1.0
+      high:
+        min_good_ratio: 0.999
+  schedule:
+    environments: [dev, prod, staging]
+    expected_start_utc: "03:00"
+    expected_completion_utc: "03:30"
+    expected_duration_minutes: 30
+    warn_if_duration_exceeds_minutes: 60
+    timezone: UTC
+
+# ── Cost Governance ──────────────────────────────────────────────────────────
+cost:
+  currency: GBP
+  budget:
+    daily_limit: 5
+    weekly_limit: 25
+    monthly_limit: 75
+    per_run_anomaly_multiplier: 3
+
+# ── Notifications ────────────────────────────────────────────────────────────
+notifications:
+  - type: slack
+    target: "#data-platform-alerts"
+    on_events: [failed]
+  - type: slack
+    target: "#data-platform-slo-alerts"
+    on_events: [slo_breach]
+  - type: email
+    targets:
+      - "platform-data@lakelogic.com"
+    on_events: [failed, slo_breach]
+
+# ── Observatory Telemetry ────────────────────────────────────────────────────
+observatory:
+  enabled: false
+  environments: [dev, prod, staging, local, local_polars]
+  endpoint: "${LAKELOGIC_OBSERVATORY_ENDPOINT}"
+  api_key: "${LAKELOGIC_API_KEY}"
+  emit_on: [success, partial, failed]
+
+# ── Compliance & Privacy ─────────────────────────────────────────────────────
+# Reference data is non-personal lookups (city codes, vehicle types,
+# currency rates, etc.). No PII, no special category data.
+compliance:
+  sensitivity: Public
+  purpose: "Internal reference / lookup tables. No personal data."
+  risk_level: low
+  risk_triggers: []
+  dpo_review_required: false
+  frameworks:
+    gdpr:
+      applicable: false
+      jurisdiction: EU/EEA
+      special_category_data: false
+      dpia_required: false
+    ai_act:
+      applicable: false
+    hipaa:
+      applicable: false
+    ccpa:
+      applicable: false
+    sox:
+      applicable: false
+  cross_border_transfer: false
+  data_residency: EU
+  erasure:
+    # Reference data carries no subject identifiers — erasure is N/A but
+    # we declare a strategy so tooling that requires the field is happy.
+    strategy: not_applicable
+
+# ── Retention ────────────────────────────────────────────────────────────────
+retention:
+  bronze: P30D
+  silver: P7Y
+  gold: P7Y
+
+# Layer aliases
+bronze_layer: bronze
+silver_layer: silver
+gold_layer: gold

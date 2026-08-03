@@ -1,0 +1,52 @@
+version: 1.0.0
+info:
+  title: "Silver \u2014 Stripe Payouts"
+  table_name: '{silver_layer}_stripe_payouts'
+  description: Cleaned, typed, and deduplicated data.
+  target_layer: silver
+  domain: payments
+  system: stripe
+model:
+  fields:
+  - name: PAYOUT_ID
+    type: string
+    required: true
+  - name: DRIVER_ID
+    type: string
+    required: true
+  - name: AMOUNT
+    type: float
+  - name: CURRENCY
+    type: string
+  - name: STATUS
+    type: string
+  - name: PAYOUT_EMAIL
+    type: string
+    pii: true
+    masking: hash
+  - name: BANK_ACCOUNT_LAST_FOUR
+    type: string
+    pii: true
+    masking: hash
+  - name: ARRIVAL_DATE
+    type: date
+    description: Date the payout is expected to settle in the bank account.
+  - name: CREATED_AT
+    type: timestamp
+    description: Timestamp the payout was created in Stripe.
+primary_key:
+- PAYOUT_ID
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: PAYOUT_ID
+transformations:
+- deduplicate:
+    by:
+    - PAYOUT_ID
+    sort_by:
+    - PAYOUT_ID
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_payouts
+  load_mode: full

@@ -1,0 +1,46 @@
+version: 1.0.0
+info:
+  title: "Bronze \u2014 HubSpot Push Notifications"
+  table_name: '{bronze_layer}_{system}_push_notifications'
+  description: 'Raw push notification delivery data from HubSpot.
+
+    '
+  target_layer: bronze
+  domain: marketing
+  system: hubspot
+model:
+  fields:
+  - name: NOTIFICATION_ID
+    type: string
+    required: true
+    description: Notification ID
+  - name: RIDER_ID
+    type: string
+    pii: true
+    description: FK to marketplace rider
+    foreign_key:
+      contract: '{bronze_layer}_rideflow_rider_profiles'
+      column: RIDER_ID
+  - name: DEVICE_TOKEN
+    type: string
+    pii: true
+    description: Mobile push token
+  - name: CAMPAIGN_NAME
+    type: string
+    description: Push campaign name
+  - name: SENT_AT
+    type: string
+    description: Send timestamp
+  - name: DELIVERED_AT
+    type: string
+    description: Delivery timestamp
+  - name: OPENED_AT
+    type: string
+    description: Open timestamp
+  - name: PLATFORM
+    type: string
+    description: ios, android
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_push_notifications
+  load_mode: full

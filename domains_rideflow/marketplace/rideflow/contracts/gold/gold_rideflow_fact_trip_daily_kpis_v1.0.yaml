@@ -1,0 +1,54 @@
+version: 1.0.0
+info:
+  title: "Gold \u2014 Fact Trip Daily KPIs"
+  table_name: '{gold_layer}_rideflow_fact_trip_daily_kpis'
+  description: Daily revenue, volume, and distance KPIs aggregated from completed
+    trips.
+  target_layer: gold
+  domain: marketplace
+  system: rideflow
+source:
+  type: table
+  path: table:{domain_catalog}.silver_rideflow_trips
+  load_mode: full
+primary_key:
+- KPI_DATE
+- CITY_CODE
+links:
+- name: silver_trips_full
+  path: table:{domain_catalog}.silver_rideflow_trips
+  type: table
+model:
+  fields:
+  - name: KPI_DATE
+    type: date
+    required: true
+  - name: CITY_CODE
+    type: string
+  - name: TOTAL_TRIPS
+    type: integer
+  - name: TOTAL_REVENUE
+    type: float
+  - name: TOTAL_DISTANCE_KM
+    type: float
+  - name: AVG_FARE
+    type: float
+  - name: AVG_SURGE
+    type: float
+transformations:
+- phase: pre
+  sql: "SELECT\n    CAST(requested_at AS DATE) AS kpi_date,\n    city_code,\n    COUNT(*)\
+    \                   AS total_trips,\n    SUM(fare_amount)           AS total_revenue,\n\
+    \    SUM(distance_km)           AS total_distance_km,\n    AVG(fare_amount)  \
+    \         AS avg_fare,\n    AVG(surge_multiplier)      AS avg_surge\n-- Read the\
+    \ FULL Silver table (via link) so aggregates\n-- (COUNT, SUM, AVG) include ALL\
+    \ rows for each date \u2014\n-- not just the incremental slice.\nFROM silver_trips_full\n\
+    WHERE requested_at IS NOT NULL\n-- Only re-aggregate dates that received new trips.\n\
+    -- On a full load, `source` contains everything, so this safely selects all dates.\n\
+    AND CAST(requested_at AS DATE) IN (SELECT DISTINCT CAST(requested_at AS DATE)\
+    \ FROM source)\nGROUP BY CAST(requested_at AS DATE), city_code\n"
+downstream:
+- name: Executive Daily KPI Dashboard
+  type: dashboard
+  platform: PowerBI
+  owner: finance@rideflow.com

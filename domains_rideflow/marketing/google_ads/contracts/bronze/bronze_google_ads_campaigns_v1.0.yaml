@@ -1,0 +1,50 @@
+version: 1.0.0
+info:
+  title: "Bronze \u2014 Google Ads Campaigns"
+  table_name: '{bronze_layer}_{system}_campaigns'
+  description: "Raw Google Ads campaign performance metrics. Aggregate data \u2014\
+    \ no PII.\n"
+  target_layer: bronze
+  domain: marketing
+  system: google_ads
+model:
+  fields:
+  - name: CAMPAIGN_ID
+    type: string
+    required: true
+    description: Google Ads campaign ID
+  - name: CAMPAIGN_NAME
+    type: string
+    required: true
+    description: Campaign name
+  - name: AD_GROUP_ID
+    type: string
+    description: Ad group ID
+  - name: AD_GROUP_NAME
+    type: string
+    description: Ad group name
+  - name: DATE
+    type: string
+    description: Reporting date
+  - name: IMPRESSIONS
+    type: string
+    description: Number of impressions
+  - name: CLICKS
+    type: string
+    description: Number of clicks
+  - name: COST
+    type: string
+    description: Total spend in minor units
+  - name: CONVERSIONS
+    type: string
+    description: Number of conversions
+  - name: CONVERSION_VALUE
+    type: string
+    description: Total conversion value
+  - name: CURRENCY
+    type: string
+    description: ISO 4217 currency code
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_campaigns
+  load_mode: full
