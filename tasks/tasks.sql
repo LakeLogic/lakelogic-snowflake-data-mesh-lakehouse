@@ -27,27 +27,27 @@ CREATE OR REPLACE TASK T_RIDEFLOW_MARKETPLACE
 CREATE OR REPLACE TASK T_00_PROVISION
   WAREHOUSE = {{WH}}
   AFTER T_RIDEFLOW_MARKETPLACE
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'provision');
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('domain=marketplace system=rideflow layer=provision');
 
 CREATE OR REPLACE TASK T_01_LANDING
   WAREHOUSE = {{WH}}
   AFTER T_00_PROVISION
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'landing');
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('domain=marketplace system=rideflow layer=landing');
 
 CREATE OR REPLACE TASK T_02_BRONZE
   WAREHOUSE = {{WH}}
   AFTER T_01_LANDING
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'bronze');
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('domain=marketplace system=rideflow layer=bronze');
 
 CREATE OR REPLACE TASK T_03_SILVER
   WAREHOUSE = {{WH}}
   AFTER T_02_BRONZE
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'silver');
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('domain=marketplace system=rideflow layer=silver');
 
 CREATE OR REPLACE TASK T_04_GOLD
   WAREHOUSE = {{WH}}
   AFTER T_03_SILVER   -- gold waits on silver
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'gold');
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('domain=marketplace system=rideflow layer=gold');
 
 -- Tasks are created SUSPENDED. Resume children first, then the root, so the graph is
 -- armed. deploy_project.py does this; to do it by hand:
