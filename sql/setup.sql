@@ -22,8 +22,11 @@ USE SCHEMA PIPELINE;
 CREATE COMPUTE POOL IF NOT EXISTS RIDEFLOW_POOL
   MIN_NODES = 1 MAX_NODES = 1 INSTANCE_FAMILY = CPU_X64_XS AUTO_SUSPEND_SECS = 300;
 
--- Notebooks pip-install lakelogic>=1.41.0 from Snowflake's internal PyPI mirror
--- (no External Access / wheelhouse needed — works on trial accounts).
+-- Stage the LakeLogic wheelhouse from the repo. Headless task runs don't have the
+-- internal PyPI mirror, so notebooks install lakelogic (official 1.41.0) + pure-python
+-- deps from here with pip --no-index; the runtime already ships pandas/pydantic/pyyaml.
+CREATE STAGE IF NOT EXISTS WHEELS;
+COPY FILES INTO @WHEELS FROM @RIDEFLOW_REPO/branches/main/wheelhouse/;
 
 -- Notebooks — created FROM the repo ROOT (MAIN_FILE points into notebooks/) so the
 -- whole repo (runtime/ + domains_rideflow/) is available to each notebook ----------

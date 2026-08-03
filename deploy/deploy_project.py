@@ -107,6 +107,15 @@ def main():
         MIN_NODES = 1 MAX_NODES = 1 INSTANCE_FAMILY = CPU_X64_XS
         AUTO_SUSPEND_SECS = 300""")
 
+    print("── Stage the LakeLogic wheelhouse (headless-run install) ────")
+    # Headless EXECUTE NOTEBOOK task runs don't have Snowflake's internal PyPI mirror, so
+    # they install LakeLogic (official 1.41.0) + pure-python deps from wheels staged here
+    # with pip --no-index. The container runtime ships pandas/pydantic/pyyaml/etc.
+    run(cur, f"CREATE STAGE IF NOT EXISTS {db}.PIPELINE.WHEELS")
+    for whl in sorted((REPO / "wheelhouse").glob("*.whl")):
+        uri = "file://" + str(whl).replace("\\", "/")
+        run(cur, f"PUT '{uri}' @{db}.PIPELINE.WHEELS AUTO_COMPRESS = FALSE OVERWRITE = TRUE")
+
     print("── Notebooks (from Git repo) ────────────────────────────────")
     # Create FROM the repo ROOT (MAIN_FILE points into notebooks/) so the whole repo —
     # runtime/ and domains_rideflow/ — is available to the notebook at runtime, not just
