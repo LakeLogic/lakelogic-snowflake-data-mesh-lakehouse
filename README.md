@@ -152,7 +152,7 @@ domains_rideflow/          Domain-owned contract trees (portable, engine-agnosti
 runtime/                   Shared LakeLogic-on-Snowflake runtime (used by deploy AND notebooks)
   medallion.py             run_layer(): run + persist one medallion layer on a connection
   landing.py               generate + load LANDING tables
-notebooks/                 In-Snowflake LakeLogic Notebooks (provision/landing/bronze/silver/gold)
+notebooks/pipeline_driver.ipynb  One parameterized driver (domain/system/layer via key=value params)
 tasks/tasks.sql            Snowflake Task DAG (EXECUTE NOTEBOOK) — run history in Task Graph
 wheelhouse/                LakeLogic (fixed) + pure-python dep wheels (trial-safe notebook install)
 sql/bootstrap.sql          One-time: create DB/WH/Git repo (paste PAT), then run setup.sql from git
@@ -175,9 +175,17 @@ Beyond the local client, the whole medallion can run **inside Snowflake** as a
 | Component | Where it shows up |
 | --- | --- |
 | Contracts (`domains_rideflow/`) + notebooks + tasks | **Projects → Workspaces** (the Git repo) |
-| LakeLogic Notebooks (per layer) | **Projects → Notebooks** — each runs `run_layer()` on the session |
+| LakeLogic driver notebook | **Projects → Notebooks** — one `NB_PIPELINE`, parameterized by layer |
 | Orchestration + run history | **Monitoring → Task History / Task Graph** |
 | Data products / quarantine | **Databases →** `RIDEFLOW_DEV_DEMO` schemas |
+
+**One parameterized driver, not five notebooks.** A single `NB_PIPELINE` notebook runs any
+`domain / system / layer`, chosen by parameters a Task passes as a `key=value` string —
+`EXECUTE NOTEBOOK NB_PIPELINE('domain=marketplace system=rideflow layer=bronze')` — read from
+`sys.argv` (the Snowflake analogue of Databricks/Fabric widget parameters). Each layer task
+passes a different `layer=`; to run it interactively, edit the defaults in the notebook's
+top **parameters cell** and Run. This scales to the full mesh (one driver, N task chains)
+instead of a notebook per domain×layer.
 
 The Notebooks run the **same `runtime/` code the local deploy uses**, on the notebook's
 own Snowpark session (`SnowflakeAdapter.set_shared_connection(session.connection)`) — no

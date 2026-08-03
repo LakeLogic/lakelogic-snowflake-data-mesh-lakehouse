@@ -4,8 +4,8 @@
 Wires the Git-connected Workspace end-to-end:
   1. SECRET (GitHub PAT) + API INTEGRATION + GIT REPOSITORY  -> repo browsable in Snowsight
   2. COMPUTE POOL                                            -> container runtime for Notebooks
-  3. CREATE NOTEBOOK (from the repo) x5                      -> provision/landing/bronze/silver/gold
-  4. Task DAG from tasks/tasks.sql (EXECUTE NOTEBOOK)        -> run history in Task Graph
+  3. CREATE NOTEBOOK NB_PIPELINE (from the repo)            -> one parameterized driver
+  4. Task DAG from tasks/tasks.sql (EXECUTE NOTEBOOK w/args) -> run history in Task Graph
   5. (--run) EXECUTE TASK                                    -> kick off one live run
 
 Prereqs (deploy/.env, gitignored):
