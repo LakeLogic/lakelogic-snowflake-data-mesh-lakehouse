@@ -20,7 +20,7 @@ USE SCHEMA PIPELINE;
 
 -- Compute pool for the container-runtime Notebooks -----------------------------
 CREATE COMPUTE POOL IF NOT EXISTS RIDEFLOW_POOL
-  MIN_NODES = 1 MAX_NODES = 1 INSTANCE_FAMILY = CPU_X64_XS AUTO_SUSPEND_SECS = 300;
+  MIN_NODES = 1 MAX_NODES = 2 INSTANCE_FAMILY = CPU_X64_XS AUTO_SUSPEND_SECS = 300;
 
 -- Stage the LakeLogic wheelhouse from the repo. Headless task runs don't have the
 -- internal PyPI mirror, so notebooks install lakelogic (official 1.41.0) + pure-python

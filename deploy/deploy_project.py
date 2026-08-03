@@ -100,7 +100,7 @@ def main():
 
     print("── Compute pool (container runtime for Notebooks) ───────────")
     run(cur, f"""CREATE COMPUTE POOL IF NOT EXISTS {pool}
-        MIN_NODES = 1 MAX_NODES = 1 INSTANCE_FAMILY = CPU_X64_XS
+        MIN_NODES = 1 MAX_NODES = 2 INSTANCE_FAMILY = CPU_X64_XS
         AUTO_SUSPEND_SECS = 300""")
 
     print("── Stage the LakeLogic wheelhouse (headless-run install) ────")
