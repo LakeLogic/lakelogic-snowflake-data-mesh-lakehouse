@@ -154,8 +154,11 @@ runtime/                   Shared LakeLogic-on-Snowflake runtime (used by deploy
   landing.py               generate + load LANDING tables
 notebooks/                 In-Snowflake LakeLogic Notebooks (provision/landing/bronze/silver/gold)
 tasks/tasks.sql            Snowflake Task DAG (EXECUTE NOTEBOOK) — run history in Task Graph
+wheelhouse/                LakeLogic (fixed) + pure-python dep wheels (trial-safe notebook install)
+sql/bootstrap.sql          One-time: create DB/WH/Git repo (paste PAT), then run setup.sql from git
+sql/setup.sql              Flesh out the whole project from the repo (compute pool, wheels, notebooks, tasks)
 deploy/deploy.py           Local client: provision + landing + run medallion (fastest path)
-deploy/deploy_project.py   Deploy the native Snowflake Project (Git + Notebooks + Tasks)
+deploy/deploy_project.py   Deploy the native Snowflake Project from Python (Git + Notebooks + Tasks)
 deploy/.env.example        Connection + Project template
 docs/                      Architecture and notes
 ```
@@ -176,24 +179,49 @@ Beyond the local client, the whole medallion can run **inside Snowflake** as a
 | Orchestration + run history | **Monitoring → Task History / Task Graph** |
 | Data products / quarantine | **Databases →** `RIDEFLOW_DEV_DEMO` schemas |
 
-The Notebooks `pip install lakelogic` (container runtime) and run the **same
-`runtime/` code the local deploy uses**, on the notebook's own Snowpark session
-(`SnowflakeAdapter.set_shared_connection(session.connection)`) — no password in the
-notebook. A Task per layer runs its notebook via `EXECUTE NOTEBOOK`, chained
-`provision → landing → bronze → silver → gold`.
+The Notebooks run the **same `runtime/` code the local deploy uses**, on the notebook's
+own Snowpark session (`SnowflakeAdapter.set_shared_connection(session.connection)`) — no
+password in the notebook. A Task per layer runs its notebook via `EXECUTE NOTEBOOK`,
+chained `provision → landing → bronze → silver → gold`, so the whole medallion runs
+**inside Snowflake** with native run history.
 
-**Requires a LakeLogic build with the Snowflake-engine fixes** used here
-(`set_shared_connection` + `TRY_CAST`→`TO_VARCHAR`). Point `LAKELOGIC_SPEC` (top of each
-notebook) at that PyPI release or a git build.
+### Deploy from GitHub (self-serve, no laptop) — recommended
 
+Snowflake reads the repo directly and fleshes out everything. In a Snowsight worksheet:
+
+1. Open **`sql/bootstrap.sql`**, paste your GitHub username + a fine-grained **PAT**
+   (Contents: Read), and run it. It creates the database, warehouse, and `GIT REPOSITORY`,
+   then calls:
+   ```sql
+   EXECUTE IMMEDIATE FROM @RIDEFLOW_DEV_DEMO.PIPELINE.RIDEFLOW_REPO/branches/main/sql/setup.sql;
+   ```
+2. `setup.sql` (run from the repo) creates the schemas, compute pool, **stages the
+   LakeLogic wheelhouse**, creates the Notebooks + Task DAG, and kicks off a run.
+3. Watch **Monitoring → Task History** (or the `T_RIDEFLOW_MARKETPLACE` **Graph** tab).
+
+The only step needing your PAT is the bootstrap — Snowflake must authenticate to read a
+private repo. Everything after runs from the repo.
+
+**Or from Python** (same result, parameterized via `deploy/.env`):
 ```bash
-# In deploy/.env, also set: GITHUB_REPO_URL, GITHUB_USER, GITHUB_PAT, SNOWFLAKE_COMPUTE_POOL
-python deploy/deploy_project.py            # wire Git repo + compute pool + notebooks + task DAG
-python deploy/deploy_project.py --run      # ...and kick off one live run
+# set GITHUB_REPO_URL, GITHUB_USER, GITHUB_PAT, SNOWFLAKE_COMPUTE_POOL in deploy/.env
+python deploy/deploy_project.py --run
 ```
 
-> Container-runtime Notebooks need Snowpark Container Services (compute pools) enabled
-> on the account. The local `deploy/deploy.py` path has no such requirement.
+### Trial-safe install (no internet)
+
+Trial accounts can't use External Access Integrations, so the Notebooks **can't**
+`pip install` from the internet. Instead they install LakeLogic + pure-python deps from a
+**wheelhouse staged in Snowflake** (`@PIPELINE.WHEELS`, populated from `wheelhouse/`) with
+`pip --no-index`; the container runtime already ships pandas/pydantic/pyyaml/snowflake-
+connector. The staged wheel is a LakeLogic build carrying the two Snowflake-engine fixes
+used here (`set_shared_connection` + `TRY_CAST`→`TO_VARCHAR`).
+
+> On a **paid** account you can skip the wheelhouse — Snowflake's internal PyPI mirror
+> serves `pip install lakelogic` directly (once those fixes are on PyPI).
+>
+> Container-runtime Notebooks need compute pools (available on the trial). The local
+> `deploy/deploy.py` path needs neither compute pools nor staged wheels.
 
 ### How LANDING would be fed in production
 
