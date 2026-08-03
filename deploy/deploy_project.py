@@ -118,10 +118,13 @@ def main():
         run(cur, f"PUT '{uri}' @{db}.PIPELINE.WHEELS AUTO_COMPRESS = FALSE OVERWRITE = TRUE")
 
     print("── Notebooks (from Git repo) ────────────────────────────────")
-    stage = f"@{db}.PIPELINE.RIDEFLOW_REPO/branches/{args.branch}/notebooks/"
+    # Create FROM the repo ROOT (MAIN_FILE points into notebooks/) so the whole repo —
+    # runtime/ and domains_rideflow/ — is available to the notebook at runtime, not just
+    # the .ipynb. Otherwise `import runtime` / reading contracts fails.
+    repo_stage = f"@{db}.PIPELINE.RIDEFLOW_REPO/branches/{args.branch}/"
     for name, fname in NOTEBOOKS:
         run(cur, f"""CREATE OR REPLACE NOTEBOOK {db}.PIPELINE.{name}
-            FROM '{stage}' MAIN_FILE = '{fname}'
+            FROM '{repo_stage}' MAIN_FILE = 'notebooks/{fname}'
             QUERY_WAREHOUSE = {wh}
             COMPUTE_POOL = {pool}
             RUNTIME_NAME = 'SYSTEM$BASIC_RUNTIME'""")
