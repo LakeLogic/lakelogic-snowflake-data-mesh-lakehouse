@@ -53,9 +53,12 @@ def run(cur, stmt):
 
 
 def sql_statements(text):
-    """Yield executable statements from a .sql file (drop full-line comments)."""
-    clean = "\n".join(l for l in text.splitlines() if not l.strip().startswith("--"))
-    for stmt in clean.split(";"):
+    """Yield executable statements from a .sql file (strip -- comments, full-line + inline)."""
+    lines = []
+    for l in text.splitlines():
+        i = l.find("--")           # our SQL has no -- inside strings/identifiers
+        lines.append(l[:i] if i != -1 else l)
+    for stmt in "\n".join(lines).split(";"):
         if stmt.strip():
             yield stmt.strip()
 
