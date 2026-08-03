@@ -34,11 +34,7 @@ _d = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_d)
 
 NOTEBOOKS = [
-    ("NB_00_PROVISION", "00_provision.ipynb"),
-    ("NB_01_LANDING", "01_landing_marketplace.ipynb"),
-    ("NB_02_BRONZE", "02_bronze_marketplace.ipynb"),
-    ("NB_03_SILVER", "03_silver_marketplace.ipynb"),
-    ("NB_04_GOLD", "04_gold_marketplace.ipynb"),
+    ("NB_PIPELINE", "pipeline_driver.ipynb"),   # one parameterized driver for every layer
 ]
 TASK_RESUME_ORDER = [   # children first, root last, so the graph is armed
     "T_04_GOLD", "T_03_SILVER", "T_02_BRONZE", "T_01_LANDING",

@@ -23,30 +23,31 @@ CREATE OR REPLACE TASK T_RIDEFLOW_MARKETPLACE
   COMMENT   = 'RideFlow marketplace medallion root - nightly 0300 UTC or on demand'
   AS SELECT 1;
 
+-- Every task calls the ONE parameterized driver, passing (domain, system, layer).
 CREATE OR REPLACE TASK T_00_PROVISION
   WAREHOUSE = {{WH}}
   AFTER T_RIDEFLOW_MARKETPLACE
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_00_PROVISION();
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'provision');
 
 CREATE OR REPLACE TASK T_01_LANDING
   WAREHOUSE = {{WH}}
   AFTER T_00_PROVISION
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_01_LANDING();
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'landing');
 
 CREATE OR REPLACE TASK T_02_BRONZE
   WAREHOUSE = {{WH}}
   AFTER T_01_LANDING
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_02_BRONZE();
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'bronze');
 
 CREATE OR REPLACE TASK T_03_SILVER
   WAREHOUSE = {{WH}}
   AFTER T_02_BRONZE
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_03_SILVER();
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'silver');
 
 CREATE OR REPLACE TASK T_04_GOLD
   WAREHOUSE = {{WH}}
   AFTER T_03_SILVER   -- gold waits on silver
-  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_04_GOLD();
+  AS EXECUTE NOTEBOOK {{DB}}.PIPELINE.NB_PIPELINE('marketplace', 'rideflow', 'gold');
 
 -- Tasks are created SUSPENDED. Resume children first, then the root, so the graph is
 -- armed. deploy_project.py does this; to do it by hand:
