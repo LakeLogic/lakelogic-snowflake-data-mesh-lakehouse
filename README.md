@@ -36,10 +36,17 @@ Snowflake** via `snowflake-connector-python`, driven by a small Python client.
 | Rejected rows | A shared `QUARANTINE` schema |
 | Compute | A **warehouse** (`RIDEFLOW_WH`, XSMALL, auto-suspend) |
 
-Bronze reads a **landing table** (Snowflake has no file source), so the deploy generates
-FK-consistent synthetic data and loads it into `LANDING.<system>_<entity>` before the
-medallion runs — either directly, or (with `--via-stage`) by `PUT`-ing partitioned files
-into a per-domain stage and `COPY INTO`, mirroring a real ingestion drop zone.
+Bronze reads a **table** source: LakeLogic's `snowflake` engine resolves each contract's
+`source` to a named table and runs the contract as SQL against it, so the deploy generates
+FK-consistent synthetic data and materializes `LANDING.<system>_<entity>` before the
+medallion runs — either directly (`write_pandas`), or (with `--via-stage`) by `PUT`-ing
+partitioned files into a per-domain stage and `COPY INTO`, mirroring a real ingestion drop
+zone.
+
+> Snowflake *can* read staged files directly — `SELECT … FROM @stage`, **external tables**,
+> or **directory tables** — so Bronze could read the stage without a physical `COPY INTO`
+> (e.g. via an external table / a view over the stage). That's an engine enhancement: the
+> `snowflake` engine's contract `source` is table-based today, not stage/file-based.
 
 ## Prerequisites
 
