@@ -199,7 +199,8 @@ sql/setup.sql              Flesh out the whole project from the repo (compute po
 deploy/deploy.py           Local client: provision + landing + run medallion (fastest path)
 deploy/deploy_project.py   Deploy the native Snowflake Project from Python (Git + Notebooks + Tasks)
 deploy/.env.example        Connection + Project template
-docs/                      Architecture and notes
+docs/iceberg-roadmap.md    Making it an open lakehouse (Iceberg via Horizon; native vs external)
+docs/external-storage-setup.md  External stage/table on AWS S3 / Azure / GCP (files as the source)
 ```
 
 `domains_rideflow/` is shared verbatim with the LakeLogic Databricks and Fabric
@@ -299,6 +300,24 @@ ingestion path — e.g. **Snowflake Connector for Google Analytics** →
 `marketing/google_analytics`, **ServiceNow connector**, or `COPY INTO` from an
 S3/Azure/GCS/OneLake stage / Snowpipe Streaming — feeding the same `LANDING.<system>_<entity>`
 tables the Bronze contracts read.
+
+## Known limitations & notes
+
+- **LakeLogic version:** the medallion needs the Snowflake-engine fixes in
+  **`lakelogic>=1.41.0`**. Notebooks currently install a staged wheel of that build
+  (`wheelhouse/`), which was cut from the `snowflake-engine-fixes` branch. Once those fixes
+  are on PyPI mainline, switch the notebooks' `LAKELOGIC_SPEC`/`pip install` to plain
+  `lakelogic>=1.41.0` and delete `wheelhouse/` — it's a build artifact, not source.
+- **Document/PDF extraction is out of scope** on the Snowflake SQL engine: the
+  `operations/checkr` `driver_licences` contracts (which read PDF files via a glob source)
+  were removed. `background_checks` — checkr's real product — runs fine. On Databricks/Fabric
+  (Spark) the PDF-extraction path is supported.
+- **Iceberg / open lakehouse** is a documented next step, not built here — see
+  [`docs/iceberg-roadmap.md`](docs/iceberg-roadmap.md) and
+  [`docs/external-storage-setup.md`](docs/external-storage-setup.md). The demo uses native
+  Snowflake tables (the most common production choice); Iceberg is the open-format upgrade.
+- **Scale:** data is synthetic and demo-sized (hundreds–thousands of rows per table) so the
+  whole mesh runs in minutes on an XSMALL warehouse.
 
 ## Cost & teardown
 
