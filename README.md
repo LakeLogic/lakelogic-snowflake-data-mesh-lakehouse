@@ -303,11 +303,16 @@ tables the Bronze contracts read.
 
 ## Known limitations & notes
 
-- **LakeLogic version:** the medallion needs the Snowflake-engine fixes in
-  **`lakelogic>=1.41.0`**. Notebooks currently install a staged wheel of that build
-  (`wheelhouse/`), which was cut from the `snowflake-engine-fixes` branch. Once those fixes
-  are on PyPI mainline, switch the notebooks' `LAKELOGIC_SPEC`/`pip install` to plain
-  `lakelogic>=1.41.0` and delete `wheelhouse/` — it's a build artifact, not source.
+- **LakeLogic version + install:** the medallion needs the Snowflake-engine fixes in
+  **`lakelogic>=1.41.0`**. The driver notebook's install cell already **prefers PyPI**
+  (`pip install lakelogic>=1.41.0`) and only **falls back to the staged wheelhouse** when
+  PyPI isn't reachable — which today is the case for **headless Task runs** (they can't reach
+  Snowflake's internal PyPI mirror), so the wheelhouse (`wheelhouse/`, staged to
+  `@PIPELINE.WHEELS`) is still required for the DAG. Interactive notebook runs already use
+  PyPI. **To drop the wheelhouse entirely once PyPI is reachable everywhere for you**
+  (e.g. a paid account with external access, or the mirror in headless runs): delete the
+  `else` fallback in the driver's install cell and the wheelhouse staging in
+  `deploy/deploy_project.py` + `sql/setup.sql`, then remove `wheelhouse/`.
 - **Document/PDF extraction is out of scope** on the Snowflake SQL engine: the
   `operations/checkr` `driver_licences` contracts (which read PDF files via a glob source)
   were removed. `background_checks` — checkr's real product — runs fine. On Databricks/Fabric
