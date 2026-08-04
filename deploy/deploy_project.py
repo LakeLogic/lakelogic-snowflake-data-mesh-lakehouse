@@ -37,8 +37,9 @@ NOTEBOOKS = [
     ("NB_PIPELINE", "pipeline_driver.ipynb"),   # one parameterized driver for every layer
 ]
 TASK_RESUME_ORDER = [   # children first, root last, so the graph is armed
-    "T_04_GOLD", "T_03_SILVER", "T_02_BRONZE", "T_01_LANDING",
-    "T_00_PROVISION", "T_RIDEFLOW_MARKETPLACE",
+    "T_SHARED", "T_OPS_ZENDESK", "T_OPS_CHECKR", "T_MKT_HUBSPOT", "T_MKT_GA",
+    "T_PAYMENTS", "T_OPS_TWILIO", "T_MKT_META", "T_MKT_GOOGLE_ADS",
+    "T_MARKETPLACE", "T_REFERENCE", "T_RIDEFLOW_MESH",
 ]
 
 
@@ -126,13 +127,21 @@ def main():
         run(cur, f"ALTER NOTEBOOK {db}.PIPELINE.{name} ADD LIVE VERSION FROM LAST")
 
     print("── Task DAG ─────────────────────────────────────────────────")
-    # Suspend any existing tasks first so CREATE OR REPLACE won't fail on resumed
-    # dependents (a task with active/resumed children can't be replaced).
-    for t in TASK_RESUME_ORDER:
-        try:
-            cur.execute(f"ALTER TASK IF EXISTS {db}.PIPELINE.{t} SUSPEND")
-        except Exception:
-            pass
+    # Clean slate: suspend + drop ALL existing tasks in PIPELINE (handles renamed/removed
+    # tasks from earlier deploys), then recreate fresh from tasks.sql. Dropping a task with
+    # successors fails, so retry a few passes (leaves drop first).
+    cur.execute(f"SHOW TASKS IN SCHEMA {db}.PIPELINE")
+    for t in [r[1] for r in cur.fetchall()]:
+        try: cur.execute(f"ALTER TASK IF EXISTS {db}.PIPELINE.{t} SUSPEND")
+        except Exception: pass
+    for _ in range(4):
+        cur.execute(f"SHOW TASKS IN SCHEMA {db}.PIPELINE")
+        left = [r[1] for r in cur.fetchall()]
+        if not left:
+            break
+        for t in left:
+            try: cur.execute(f"DROP TASK IF EXISTS {db}.PIPELINE.{t}")
+            except Exception: pass
     tsql = (REPO / "tasks" / "tasks.sql").read_text(encoding="utf-8")
     tsql = tsql.replace("{{DB}}", db).replace("{{WH}}", wh)
     for stmt in sql_statements(tsql):
