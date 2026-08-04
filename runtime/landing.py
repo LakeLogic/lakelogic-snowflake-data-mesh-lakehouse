@@ -25,8 +25,20 @@ def generate_marketplace(landing_root):
         pass
 
 
-# domain/system -> generator function
-GENERATORS = {("marketplace", "rideflow"): generate_marketplace}
+def _generatable_systems():
+    """Set of (domain, system) we can generate landing for: marketplace (StreamingSimulator)
+    + the ported per-domain generators in runtime/testdata.py (conn-aware, FK-consistent)."""
+    keys = {("marketplace", "rideflow")}
+    try:
+        from runtime.testdata import GENERATORS as _TD
+        keys |= set(_TD.keys())
+    except Exception:
+        pass
+    return keys
+
+
+# Membership set used by the deploy to decide which systems to run.
+GENERATORS = {k: True for k in _generatable_systems()}
 
 
 def _stage_name(domain):
@@ -117,12 +129,28 @@ def load_landing(conn, db, domain, system, gen_dir, log=print, via_stage=False):
     return loaded
 
 
+def _generate(conn, db, domain, system, landing_root):
+    """Dispatch to the right generator. Marketplace uses the StreamingSimulator; every other
+    system uses its conn-aware generator in runtime/testdata.py (reads upstream ids from
+    Snowflake LANDING for cross-domain FK consistency)."""
+    if (domain, system) == ("marketplace", "rideflow"):
+        generate_marketplace(landing_root)
+        return True
+    try:
+        from runtime.testdata import GENERATORS as _TD
+    except Exception:
+        _TD = {}
+    gen = _TD.get((domain, system))
+    if gen is None:
+        return False
+    gen(conn, db, landing_root)
+    return True
+
+
 def load_system_landing(conn, db, domain, system, log=print, via_stage=False):
     """Generate + load landing for one (domain, system). No-op if no generator yet."""
-    gen = GENERATORS.get((domain, system))
-    if gen is None:
-        log(f"    no generator yet for {domain}/{system} — skipping")
-        return []
     with tempfile.TemporaryDirectory() as tmp:
-        gen(tmp)
+        if not _generate(conn, db, domain, system, tmp):
+            log(f"    no generator yet for {domain}/{system} — skipping")
+            return []
         return load_landing(conn, db, domain, system, tmp, log=log, via_stage=via_stage)
