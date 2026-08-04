@@ -13,8 +13,7 @@ info:
 model:
   fields:
   - name: CITY_SK
-    type: long
-    required: true
+    type: string
     description: Surrogate key; new for each SCD2 version
   - name: CITY_CODE
     type: string
@@ -35,14 +34,12 @@ model:
     type: boolean
   - name: EFFECTIVE_FROM
     type: timestamp
-    required: true
     description: When this version became current
   - name: EFFECTIVE_TO
     type: timestamp
     description: Closed when superseded; NULL for current version
   - name: IS_CURRENT
     type: boolean
-    required: true
 quality:
   row_rules: []
   dataset_rules:

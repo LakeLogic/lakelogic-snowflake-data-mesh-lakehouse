@@ -55,11 +55,3 @@ source:
     header: 'true'
   load_mode: full
   watermark_strategy: none
-external_logic:
-  type: python
-  path: ../../_generators/dim_date.py
-  entrypoint: run
-  args:
-    start_date: '2020-01-01'
-    end_date: '2030-12-31'
-    fiscal_year_start_month: 4

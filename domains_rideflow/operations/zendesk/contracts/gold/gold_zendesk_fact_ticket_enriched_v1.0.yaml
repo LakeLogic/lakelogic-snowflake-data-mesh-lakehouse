@@ -182,6 +182,6 @@ transformations:
     \  AND d.created_at <  dd.effective_to\n"
 quality:
   row_rules:
-  - not_null: sentiment
-  - not_null: category
+  - not_null: SENTIMENT
+  - not_null: CATEGORY
   dataset_rules: []

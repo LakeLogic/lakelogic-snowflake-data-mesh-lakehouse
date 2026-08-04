@@ -55,6 +55,7 @@ def _apply_scd2_first_load(df, cd):
     ef = (s.get("effective_from_field") or "effective_from").upper()
     et = (s.get("effective_to_field") or "effective_to").upper()
     cf = (s.get("current_flag_field") or "is_current").upper()
+    sk = (s.get("surrogate_key") or "").upper()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     cols = {c.upper(): c for c in df.columns}
     if ef in cols: df[cols[ef]] = now
@@ -62,6 +63,13 @@ def _apply_scd2_first_load(df, cd):
     # column write_pandas would mistype as NUMBER; year 9999 is fine for Snowflake).
     if et in cols: df[cols[et]] = "9999-12-31 23:59:59"
     if cf in cols: df[cols[cf]] = True
+    if sk and sk in cols:
+        # Surrogate key (normally computed by the engine's SCD2 write path, skipped here):
+        # a stable hash of the business columns.
+        import hashlib
+        biz = [c for c in df.columns if c.upper() not in {ef, et, cf, sk} and not str(c).startswith("_")]
+        df[cols[sk]] = df[biz].astype(str).agg("|".join, axis=1).map(
+            lambda x: hashlib.md5(x.encode()).hexdigest())
     return df
 
 
