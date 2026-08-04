@@ -36,10 +36,10 @@ _spec.loader.exec_module(_d)
 NOTEBOOKS = [
     ("NB_PIPELINE", "pipeline_driver.ipynb"),   # one parameterized driver for every layer
 ]
-TASK_RESUME_ORDER = [   # children first, root last, so the graph is armed
-    "T_SHARED", "T_OPS_ZENDESK", "T_OPS_CHECKR", "T_MKT_HUBSPOT", "T_MKT_GA",
-    "T_PAYMENTS", "T_OPS_TWILIO", "T_MKT_META", "T_MKT_GOOGLE_ADS",
-    "T_MARKETPLACE", "T_REFERENCE", "T_RIDEFLOW_MESH",
+TASK_RESUME_ORDER = [   # linear chain, children first, root last, so the graph is armed
+    "T_SHARED", "T_REFERENCE", "T_OPS_ZENDESK", "T_OPS_CHECKR", "T_OPS_TWILIO",
+    "T_MKT_META", "T_MKT_HUBSPOT", "T_MKT_GA", "T_MKT_GOOGLE_ADS",
+    "T_PAYMENTS", "T_MARKETPLACE", "T_RIDEFLOW_MESH",
 ]
 
 
