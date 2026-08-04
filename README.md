@@ -1,12 +1,13 @@
 # Governed Data Mesh on Snowflake — Data Contracts, Quarantine & Quality Gates
 
 A working reference implementation of a **domain-driven data mesh on Snowflake**,
-powered by [LakeLogic](https://pypi.org/project/lakelogic/). Six domains own their
-Bronze, Silver and Gold data products while sharing the same contract-driven quality,
-quarantine, lineage and dependency controls.
+powered by [LakeLogic](https://pypi.org/project/lakelogic/). **Six domains / 11 source
+systems** own their Bronze, Silver and Gold data products, plus cross-domain marts — all
+sharing the same contract-driven quality, quarantine, lineage and dependency controls.
 
 The example is **RideFlow**, a fictional ride-hailing and food-delivery business. All
-data is synthetic.
+data is synthetic (generated FK-consistent from the contracts). **One command deploys and
+runs the whole mesh** — see [Deploy & run the pipelines](#deploy--run-the-pipelines).
 
 > A community reference from the LakeLogic team, not an official Snowflake product.
 
@@ -31,13 +32,14 @@ Snowflake** via `snowflake-connector-python`, driven by a small Python client.
 | Catalog | A **database** (e.g. `RIDEFLOW_DEV_DEMO`) |
 | Domain boundary | A **schema** per domain (`MARKETPLACE`, `MARKETING`, …) |
 | Bronze / Silver / Gold | **Tables** in the domain schema |
-| Landing zone | A `LANDING` schema of tables loaded from seeded synthetic data |
+| Landing zone | A `LANDING` schema of tables (+ per-domain stage "volumes") |
 | Rejected rows | A shared `QUARANTINE` schema |
 | Compute | A **warehouse** (`RIDEFLOW_WH`, XSMALL, auto-suspend) |
 
-Bronze reads a **landing table** (Snowflake has no file source), so the deploy
-generates synthetic data and loads it into `LANDING.<system>_<entity>` before the
-medallion runs.
+Bronze reads a **landing table** (Snowflake has no file source), so the deploy generates
+FK-consistent synthetic data and loads it into `LANDING.<system>_<entity>` before the
+medallion runs — either directly, or (with `--via-stage`) by `PUT`-ing partitioned files
+into a per-domain stage and `COPY INTO`, mirroring a real ingestion drop zone.
 
 ## Prerequisites
 
@@ -118,30 +120,59 @@ ALTER USER your_user SET RSA_PUBLIC_KEY='<contents of rsa_key.pub without header
 Then in `.env`: `SNOWFLAKE_PRIVATE_KEY_PATH=/path/to/rsa_key.p8` (and leave the
 password blank).
 
-## Run it
+## Deploy & run the pipelines
+
+Two ways to run the mesh — **pick one**. Both use the same contracts and the same
+`runtime/` code; they differ only in *where* the medallion runs.
+
+| | Path A — local client | Path B — native Snowflake Project |
+|---|---|---|
+| Where it runs | your machine drives Snowflake SQL | inside Snowflake (Notebooks + Task DAG) |
+| Needs | Python + `.env` | a compute pool + a GitHub PAT (private repo) |
+| Best for | fastest way to see it work | scheduled, in-Snowsight, self-serve from GitHub |
+| Command | `python deploy/deploy.py` | run `sql/bootstrap.sql`, then `EXECUTE TASK … T_RIDEFLOW_MESH` |
+
+### Path A — local client (fastest)
+
+Runs the whole medallion from your machine — LakeLogic's `snowflake` engine executes the
+SQL in Snowflake. No compute pool, no Git, no notebooks.
 
 ```bash
-# 1. Prove one system end-to-end (creates DB, warehouse, schemas; loads landing; runs Bronze→Silver→Gold)
-python deploy/deploy.py --domain marketplace/rideflow
+# Full mesh — all 11 systems across 6 domains, in FK order
+# (creates DB/WH/schemas, generates + loads landing, runs Bronze→Silver→Gold everywhere)
+python deploy/deploy.py
 
-# 2. Just provision (no data)
+# Just one system, end-to-end
+python deploy/deploy.py --domain payments/stripe
+
+# Provision only (schemas, no data)
 python deploy/deploy.py --setup-only
 
-# 3. Full mesh (all systems that have a generator)
-python deploy/deploy.py
+# Land via the stage "volume" (PUT + COPY INTO, y_/m_/d_/h_ partitions) instead of direct load
+python deploy/deploy.py --domain marketplace/rideflow --via-stage
 ```
 
-### Verify
+### Path B — native Snowflake Project (in-Snowflake, scheduled)
 
-In Snowsight:
+Runs the same medallion **inside Snowflake** as one parameterized Notebook orchestrated by
+a **Task DAG**, deployable straight from this Git repo. Full setup is in
+[Native Snowflake Project](#native-snowflake-project-notebooks--contracts--tasks) below.
+Once deployed, run the whole mesh on demand:
+
+```sql
+EXECUTE TASK RIDEFLOW_DEV_DEMO.PIPELINE.T_RIDEFLOW_MESH;   -- runs all 11 systems in FK order
+```
+(It also fires nightly on a schedule.)
+
+### Verify (either path)
 
 ```sql
 USE DATABASE RIDEFLOW_DEV_DEMO;
-SHOW SCHEMAS;
-SHOW TABLES IN SCHEMA MARKETPLACE;
+SHOW SCHEMAS;   -- LANDING, QUARANTINE, PIPELINE + one per domain: MARKETPLACE, MARKETING, OPERATIONS, PAYMENTS, REFERENCE, SHARED
 
-SELECT * FROM MARKETPLACE.GOLD_RIDEFLOW_FACT_TRIP_DAILY_KPIS LIMIT 20;
-SHOW TABLES IN SCHEMA QUARANTINE;   -- rejected rows + their contract errors
+SELECT * FROM MARKETPLACE.GOLD_RIDEFLOW_FACT_TRIP_DAILY_KPIS;   -- a domain data product
+SELECT * FROM SHARED.GOLD_SHARED_FACT_REVENUE_DAILY;           -- a cross-domain mart (reads many domains)
+SHOW TABLES IN SCHEMA QUARANTINE;                              -- rejected rows + the rule/reason that rejected them
 ```
 
 ## Repository layout
@@ -151,9 +182,10 @@ domains_rideflow/          Domain-owned contract trees (portable, engine-agnosti
   <domain>/<system>/contracts/{bronze,silver,gold}/
 runtime/                   Shared LakeLogic-on-Snowflake runtime (used by deploy AND notebooks)
   medallion.py             run_layer(): run + persist one medallion layer on a connection
-  landing.py               generate + load LANDING tables
+  landing.py               generate + load LANDING (direct, or PUT+COPY INTO a stage volume)
+  testdata.py              Per-domain data generators (conn-aware, cross-domain FK-consistent)
 notebooks/pipeline_driver.ipynb  One parameterized driver (domain/system/layer via key=value params)
-tasks/tasks.sql            Snowflake Task DAG (EXECUTE NOTEBOOK) — run history in Task Graph
+tasks/tasks.sql            Full-mesh Task DAG — one task per system, linear FK order
 wheelhouse/                LakeLogic (fixed) + pure-python dep wheels (trial-safe notebook install)
 sql/bootstrap.sql          One-time: create DB/WH/Git repo (paste PAT), then run setup.sql from git
 sql/setup.sql              Flesh out the whole project from the repo (compute pool, wheels, notebooks, tasks)
@@ -179,19 +211,21 @@ Beyond the local client, the whole medallion can run **inside Snowflake** as a
 | Orchestration + run history | **Monitoring → Task History / Task Graph** |
 | Data products / quarantine | **Databases →** `RIDEFLOW_DEV_DEMO` schemas |
 
-**One parameterized driver, not five notebooks.** A single `NB_PIPELINE` notebook runs any
-`domain / system / layer`, chosen by parameters a Task passes as a `key=value` string —
-`EXECUTE NOTEBOOK NB_PIPELINE('domain=marketplace system=rideflow layer=bronze')` — read from
-`sys.argv` (the Snowflake analogue of Databricks/Fabric widget parameters). Each layer task
-passes a different `layer=`; to run it interactively, edit the defaults in the notebook's
-top **parameters cell** and Run. This scales to the full mesh (one driver, N task chains)
-instead of a notebook per domain×layer.
+**One parameterized driver, not one notebook per domain×layer.** A single `NB_PIPELINE`
+notebook runs any `domain / system / layer`, chosen by parameters a Task passes as a
+`key=value` string — `EXECUTE NOTEBOOK NB_PIPELINE('domain=marketplace system=rideflow
+layer=all')` — read from `sys.argv` (the Snowflake analogue of Databricks/Fabric widget
+parameters). To run it interactively, edit the defaults in the notebook's top
+**parameters cell** and Run.
 
-The Notebooks run the **same `runtime/` code the local deploy uses**, on the notebook's
-own Snowpark session (`SnowflakeAdapter.set_shared_connection(session.connection)`) — no
-password in the notebook. A Task per layer runs its notebook via `EXECUTE NOTEBOOK`,
-chained `provision → landing → bronze → silver → gold`, so the whole medallion runs
-**inside Snowflake** with native run history.
+The **Task DAG** is a linear FK-ordered chain — **one task per system**
+(`T_MARKETPLACE → T_PAYMENTS → T_MKT_* → T_OPS_* → T_REFERENCE → T_SHARED`), each calling
+`NB_PIPELINE(domain, system, layer=all)`. Serial ordering keeps cross-domain foreign keys
+consistent (a downstream system reads real upstream ids) and fits a small compute pool
+without contention. The notebooks run the **same `runtime/` code the local deploy uses**,
+on the notebook's own Snowpark session
+(`SnowflakeAdapter.set_shared_connection(session.connection)`) — no password in the
+notebook — so the whole mesh runs **inside Snowflake** with native run history.
 
 ### Deploy from GitHub (self-serve, no laptop) — recommended
 
@@ -204,8 +238,9 @@ Snowflake reads the repo directly and fleshes out everything. In a Snowsight wor
    EXECUTE IMMEDIATE FROM @RIDEFLOW_DEV_DEMO.PIPELINE.RIDEFLOW_REPO/branches/main/sql/setup.sql;
    ```
 2. `setup.sql` (run from the repo) creates the schemas, compute pool, **stages the
-   LakeLogic wheelhouse**, creates the Notebooks + Task DAG, and kicks off a run.
-3. Watch **Monitoring → Task History** (or the `T_RIDEFLOW_MARKETPLACE` **Graph** tab).
+   LakeLogic wheelhouse**, creates the `NB_PIPELINE` Notebook + the full-mesh Task DAG,
+   and kicks off a run.
+3. Watch **Monitoring → Task History** (or the `T_RIDEFLOW_MESH` **Graph** tab).
 
 The only step needing your PAT is the bootstrap — Snowflake must authenticate to read a
 private repo. Everything after runs from the repo.
@@ -215,6 +250,21 @@ private repo. Everything after runs from the repo.
 # set GITHUB_REPO_URL, GITHUB_USER, GITHUB_PAT, SNOWFLAKE_COMPUTE_POOL in deploy/.env
 python deploy/deploy_project.py --run
 ```
+
+### Run the pipelines (once the Project is deployed)
+
+```sql
+-- Whole mesh, on demand (or wait for the nightly schedule):
+EXECUTE TASK RIDEFLOW_DEV_DEMO.PIPELINE.T_RIDEFLOW_MESH;
+
+-- Just one system / layer, headless:
+EXECUTE NOTEBOOK RIDEFLOW_DEV_DEMO.PIPELINE.NB_PIPELINE('domain=payments system=stripe layer=all');
+```
+
+- **Interactively:** open **Projects → Notebooks → `NB_PIPELINE`**, edit the top
+  **parameters cell** (`domain=…, system=…, layer=…`), and **Run all**.
+- **Watch it:** **Monitoring → Task History** → the `T_RIDEFLOW_MESH` **Graph** tab shows
+  each system node succeed in order.
 
 ### How the Notebooks get LakeLogic
 
