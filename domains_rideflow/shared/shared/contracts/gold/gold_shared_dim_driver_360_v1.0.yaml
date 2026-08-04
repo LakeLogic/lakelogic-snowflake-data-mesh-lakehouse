@@ -41,7 +41,7 @@ primary_key:
 - DRIVER_ID
 source:
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_driver_profiles
+  path: table:{catalog}.marketplace.silver_rideflow_driver_profiles
   load_mode: full
 transformations:
 - phase: pre
@@ -70,10 +70,10 @@ materialization:
 links:
 - name: mp_drivers
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_driver_profiles
+  path: table:{catalog}.marketplace.silver_rideflow_driver_profiles
 - name: silver_checkr_driver_verifications
   type: table
-  path: table:`{catalog}`.operations.silver_checkr_driver_verifications
+  path: table:{catalog}.operations.silver_checkr_driver_verifications
 - name: silver_stripe_payouts
   type: table
-  path: table:`{catalog}`.payments.silver_stripe_payouts
+  path: table:{catalog}.payments.silver_stripe_payouts

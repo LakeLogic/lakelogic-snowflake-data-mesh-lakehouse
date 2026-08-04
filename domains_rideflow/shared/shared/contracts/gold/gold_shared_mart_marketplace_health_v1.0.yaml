@@ -72,7 +72,7 @@ model:
     description: Distinct rider_ids requesting at least one trip on kpi_date.
 source:
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_trip_requests
+  path: table:{catalog}.marketplace.silver_rideflow_trip_requests
   load_mode: full
 transformations:
 - phase: pre
@@ -120,13 +120,13 @@ materialization:
 links:
 - name: mp_requests
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_trip_requests
+  path: table:{catalog}.marketplace.silver_rideflow_trip_requests
 - name: mp_trips
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_trips
+  path: table:{catalog}.marketplace.silver_rideflow_trips
 - name: mp_cancels
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_trip_cancellations
+  path: table:{catalog}.marketplace.silver_rideflow_trip_cancellations
 - name: pay_charges
   type: table
-  path: table:`{catalog}`.payments.silver_stripe_charges
+  path: table:{catalog}.payments.silver_stripe_charges

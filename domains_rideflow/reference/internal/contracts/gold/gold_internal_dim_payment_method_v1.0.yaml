@@ -32,8 +32,8 @@ quality:
 primary_key:
 - PAYMENT_METHOD_CODE
 source:
-  type: landing
-  path: '{landing_root}/dim_payment_method_seed'
+  type: table
+  path: table:{catalog}.LANDING.internal_dim_payment_method_seed
   format: csv
   options:
     header: 'true'

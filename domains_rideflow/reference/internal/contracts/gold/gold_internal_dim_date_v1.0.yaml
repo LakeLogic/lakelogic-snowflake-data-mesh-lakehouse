@@ -48,8 +48,8 @@ quality:
 primary_key:
 - DATE_KEY
 source:
-  type: landing
-  path: '{landing_root}/dim_date_seed'
+  type: table
+  path: table:{catalog}.LANDING.internal_dim_date_seed
   format: csv
   options:
     header: 'true'

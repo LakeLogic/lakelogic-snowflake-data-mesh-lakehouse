@@ -70,7 +70,7 @@ model:
       \ Silver."
 source:
   type: table
-  path: table:`{catalog}`.payments.silver_stripe_charges
+  path: table:{catalog}.payments.silver_stripe_charges
   load_mode: full
 transformations:
 - phase: pre
@@ -117,16 +117,16 @@ materialization:
 links:
 - name: pay_charges
   type: table
-  path: table:`{catalog}`.payments.silver_stripe_charges
+  path: table:{catalog}.payments.silver_stripe_charges
 - name: silver_rideflow_trips
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_trips
+  path: table:{catalog}.marketplace.silver_rideflow_trips
 - name: mp_drivers
   type: table
-  path: table:`{catalog}`.marketplace.silver_rideflow_driver_profiles
+  path: table:{catalog}.marketplace.silver_rideflow_driver_profiles
 - name: silver_stripe_refunds
   type: table
-  path: table:`{catalog}`.payments.silver_stripe_refunds
+  path: table:{catalog}.payments.silver_stripe_refunds
 - name: silver_stripe_payouts
   type: table
-  path: table:`{catalog}`.payments.silver_stripe_payouts
+  path: table:{catalog}.payments.silver_stripe_payouts

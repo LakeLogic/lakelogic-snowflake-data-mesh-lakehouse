@@ -63,7 +63,7 @@ model:
     description: "attributed_new_riders \xF7 NULLIF(clicks, 0)."
 source:
   type: table
-  path: table:`{catalog}`.marketing.silver_google_ads_campaigns
+  path: table:{catalog}.marketing.silver_google_ads_campaigns
   load_mode: full
 transformations:
 - phase: pre
@@ -99,10 +99,10 @@ materialization:
 links:
 - name: mkt_google
   type: table
-  path: table:`{catalog}`.marketing.silver_google_ads_campaigns
+  path: table:{catalog}.marketing.silver_google_ads_campaigns
 - name: silver_meta_ads_campaigns
   type: table
-  path: table:`{catalog}`.marketing.silver_meta_ads_campaigns
+  path: table:{catalog}.marketing.silver_meta_ads_campaigns
 - name: silver_hubspot_email_campaigns
   type: table
-  path: table:`{catalog}`.marketing.silver_hubspot_email_campaigns
+  path: table:{catalog}.marketing.silver_hubspot_email_campaigns

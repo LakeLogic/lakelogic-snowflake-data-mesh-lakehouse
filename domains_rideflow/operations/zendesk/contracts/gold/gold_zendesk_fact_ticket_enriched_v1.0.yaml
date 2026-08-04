@@ -120,10 +120,10 @@ source:
 links:
 - name: dim_rider
   type: table
-  path: table:`{catalog}`.marketplace.gold_rideflow_dim_rider
+  path: table:{catalog}.marketplace.gold_rideflow_dim_rider
 - name: dim_driver
   type: table
-  path: table:`{catalog}`.marketplace.gold_rideflow_dim_driver
+  path: table:{catalog}.marketplace.gold_rideflow_dim_driver
 - name: tickets
   type: table
   path: table:{domain_catalog}.silver_zendesk_support_tickets

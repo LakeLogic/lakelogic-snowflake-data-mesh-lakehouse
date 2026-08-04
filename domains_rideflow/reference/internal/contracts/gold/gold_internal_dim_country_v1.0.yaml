@@ -34,8 +34,8 @@ quality:
 primary_key:
 - COUNTRY_ALPHA3
 source:
-  type: landing
-  path: '{landing_root}/dim_country_seed'
+  type: table
+  path: table:{catalog}.LANDING.internal_dim_country_seed
   format: csv
   options:
     header: 'true'
