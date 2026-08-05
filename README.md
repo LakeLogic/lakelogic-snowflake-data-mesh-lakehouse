@@ -1,13 +1,56 @@
-# Governed Data Mesh on Snowflake — Data Contracts, Quarantine & Quality Gates
+# Multi-Domain Lakehouse on Snowflake — a Governed Data Mesh Implementation
 
-A working reference implementation of a **domain-driven data mesh on Snowflake**,
-powered by [LakeLogic](https://pypi.org/project/lakelogic/). **Six domains / 11 source
-systems** own their Bronze, Silver and Gold data products, plus cross-domain marts — all
-sharing the same contract-driven quality, quarantine, lineage and dependency controls.
+*One Snowflake lakehouse, many domain-owned data products — implementing the principles of a
+**data mesh** (domain ownership, data as a product, a self-service platform, and federated
+governance) with data contracts, quarantine and quality gates.*
 
-The example is **RideFlow**, a fictional ride-hailing and food-delivery business. All
-data is synthetic (generated FK-consistent from the contracts). **One command deploys and
-runs the whole mesh** — see [Deploy & run the pipelines](#deploy--run-the-pipelines).
+> **Let every team own its data — without losing control of quality, PII or trust.**
+> This is a working blueprint for a governed data mesh on Snowflake: domain teams ship their own
+> data products, while one shared layer applies schema, quality, lineage and PII rules across all
+> of them — and emits the run evidence to show it. The native path executes through Snowflake
+> Notebooks and a Snowflake Task DAG, without an external orchestrator.
+
+A working reference implementation on Snowflake, powered by
+[LakeLogic](https://pypi.org/project/lakelogic/): **six domains own their Bronze→Silver→Gold data
+products** in one lakehouse, all sharing a single contract-driven layer for quality, quarantine,
+lineage and dependencies. It runs natively as a Snowflake Task DAG — no external orchestrator.
+
+The example is **RideFlow**, a fictional ride-hailing business (all data synthetic, generated
+FK-consistent from the contracts):
+
+```text
+RideFlow · one Snowflake lakehouse · 6 domains · 11 source systems
+│
+├── Marketplace   (rideflow)
+│   ├── Riders & Drivers
+│   ├── Trips
+│   └── Cancellations
+│
+├── Payments   (stripe)
+│   ├── Charges
+│   └── Payouts
+│
+├── Operations   (checkr · twilio · zendesk)
+│   ├── Background checks & driver licences
+│   ├── SMS logs
+│   └── Support tickets
+│
+├── Marketing   (google_ads · google_analytics · hubspot · meta_ads)
+│   ├── Campaigns & spend
+│   ├── App events & sessions
+│   └── Email & push
+│
+├── Reference   (internal)
+│   ├── Cities
+│   └── FX rates
+│
+└── Shared   (cross-domain marts)
+    └── Products that join across every domain
+```
+
+Each domain owns its contracts and products; the platform gives them shared quality, governance and
+dependency controls. **One command deploys and runs the whole thing** — see
+[Deploy & run the pipelines](#deploy--run-the-pipelines).
 
 > A community reference from the LakeLogic team, not an official Snowflake product.
 
@@ -20,6 +63,33 @@ runs the whole mesh** — see [Deploy & run the pipelines](#deploy--run-the-pipe
   rejected them, never silently dropped.
 - **Quality gates** — a dataset-level `min_good_ratio` gate can stop an unsafe run.
 - **Cross-domain products** — declared dependencies connect products across teams.
+
+## See it in action
+
+Six teams, eleven source systems, one set of rules — executed through **Snowflake Notebooks and a
+Snowflake Task DAG**, with no external orchestrator and no infrastructure to babysit.
+
+🟢 **The whole company's data estate, rebuilt on one schedule.** Every domain's Bronze→Silver→Gold
+products run as a single dependency-aware Task Graph — here, all 11 systems green in ~9 minutes.
+
+![The full RideFlow data mesh running as a Snowflake Task Graph — all 11 systems succeeded](docs/images/snowflake_task_graph_run.png)
+
+🔒 **Auditable governance evidence, by construction.** Selected Gold dimensions demonstrate
+SCD Type 2 history and row-level lineage back to source, and PII columns are masked by contract —
+names, emails and phones land `***REDACTED***` unless a policy says otherwise.
+
+![A governed Gold dimension — SCD Type 2 keys with PII columns masked by contract](docs/images/snowflake_gold_masked_scd2.png)
+
+🧩 **Every domain, the same contract-driven pattern.** Each product is one declarative step
+(`domain / system / layer`) — once source data lands, teams add processing by defining a contract,
+not by writing another medallion pipeline.
+
+![A RideFlow data product defined as a single contract-driven task](docs/images/snowflake_task_definition.png)
+
+📈 **Trustworthy by default, observable end-to-end.** Every run and its data-quality summary is
+tracked natively — so a failed load is visible immediately, not discovered in a dashboard weeks later.
+
+![Run history for the RideFlow mesh — every graph run tracked in Snowsight](docs/images/snowflake_task_run_history.png)
 
 ## How it maps to Snowflake
 
@@ -50,7 +120,7 @@ zone.
 
 ## Prerequisites
 
-- Python 3.9+ and `pip install "snowflake-connector-python[pandas]" lakelogic pyyaml`.
+- Python 3.9+ and `pip install "snowflake-connector-python[pandas]" "lakelogic>=1.41.0" pyyaml`.
 - A Snowflake account and a role that can **create a database and a warehouse**.
   A free [Snowflake trial](https://signup.snowflake.com/) works and gives you an
   account plus `ACCOUNTADMIN`.
@@ -100,7 +170,7 @@ SELECT CURRENT_ORGANIZATION_NAME()  AS org,
 - **`SNOWFLAKE_ROLE`** — a role allowed to `CREATE DATABASE` and `CREATE WAREHOUSE`.
   `ACCOUNTADMIN` or `SYSADMIN` work on a trial. List yours with:
   ```sql
-  SHOW GRANTS TO USER CURRENT_USER();      -- roles you have
+  SHOW GRANTS;      -- roles granted to the current user
   ```
   To use a custom role, grant it once as an admin:
   ```sql
@@ -135,7 +205,7 @@ Two ways to run the mesh — **pick one**. Both use the same contracts and the s
 | | Path A — local client | Path B — native Snowflake Project |
 |---|---|---|
 | Where it runs | your machine drives Snowflake SQL | inside Snowflake (Notebooks + Task DAG) |
-| Needs | Python + `.env` | a compute pool + a GitHub PAT (private repo) |
+| Needs | Python + `.env` | a compute pool (public repo — no GitHub credentials) |
 | Best for | fastest way to see it work | scheduled, in-Snowsight, self-serve from GitHub |
 | Command | `python deploy/deploy.py` | run `sql/bootstrap.sql`, then `EXECUTE TASK … T_RIDEFLOW_MESH` |
 
@@ -192,9 +262,9 @@ runtime/                   Shared LakeLogic-on-Snowflake runtime (used by deploy
   landing.py               generate + load LANDING (direct, or PUT+COPY INTO a stage volume)
   testdata.py              Per-domain data generators (conn-aware, cross-domain FK-consistent)
 notebooks/pipeline_driver.ipynb  One parameterized driver (domain/system/layer via key=value params)
-tasks/tasks.sql            Full-mesh Task DAG — one task per system, linear FK order
+tasks/tasks.sql            Full-mesh Task DAG snapshot — max parallelism (natural FK DAG); deploy generates per --mesh-max-parallel
 wheelhouse/                LakeLogic (fixed) + pure-python dep wheels (trial-safe notebook install)
-sql/bootstrap.sql          One-time: create DB/WH/Git repo (paste PAT), then run setup.sql from git
+sql/bootstrap.sql          One-time: create DB/WH/Git repo (public, no creds), then run setup.sql from git
 sql/setup.sql              Flesh out the whole project from the repo (compute pool, wheels, notebooks, tasks)
 deploy/deploy.py           Local client: provision + landing + run medallion (fastest path)
 deploy/deploy_project.py   Deploy the native Snowflake Project from Python (Git + Notebooks + Tasks)
@@ -226,11 +296,18 @@ layer=all')` — read from `sys.argv` (the Snowflake analogue of Databricks/Fabr
 parameters). To run it interactively, edit the defaults in the notebook's top
 **parameters cell** and Run.
 
-The **Task DAG** is a linear FK-ordered chain — **one task per system**
-(`T_MARKETPLACE → T_PAYMENTS → T_MKT_* → T_OPS_* → T_REFERENCE → T_SHARED`), each calling
-`NB_PIPELINE(domain, system, layer=all)`. Serial ordering keeps cross-domain foreign keys
-consistent (a downstream system reads real upstream ids) and fits a small compute pool
-without contention. The notebooks run the **same `runtime/` code the local deploy uses**,
+The **Task DAG** runs at **maximum parallelism by default** — a **natural FK DAG** where each
+system depends only on its real cross-domain parents (multi-predecessor `AFTER`), so once
+`marketplace` finishes, all seven downstream systems fan out at once
+(`marketplace, reference` → `payments, checkr, twilio, google_ads, google_analytics, hubspot,
+meta_ads` → `zendesk` → `shared`), each calling `NB_PIPELINE(domain, system, layer=all)`.
+The deploy **generates** the DAG and **auto-sizes the compute pool** to the peak width
+(`MAX_NODES=8`); the wide fan-out that previously threw *"unschedulable in full compute pool"*
+was purely a pool-sizing issue. **Validated on the trial: the whole 11-system mesh runs green
+in ~9 minutes.** Foreign keys stay consistent (a downstream system reads real upstream ids).
+
+Concurrency is a knob — `deploy_project.py --mesh-max-parallel N`: **`0` (default) = max**,
+`2` = FK-ordered waves of 2 (tighter node footprint, ~65 min), `1` = fully sequential. The notebooks run the **same `runtime/` code the local deploy uses**,
 on the notebook's own Snowpark session
 (`SnowflakeAdapter.set_shared_connection(session.connection)`) — no password in the
 notebook — so the whole mesh runs **inside Snowflake** with native run history.
@@ -239,8 +316,8 @@ notebook — so the whole mesh runs **inside Snowflake** with native run history
 
 Snowflake reads the repo directly and fleshes out everything. In a Snowsight worksheet:
 
-1. Open **`sql/bootstrap.sql`**, paste your GitHub username + a fine-grained **PAT**
-   (Contents: Read), and run it. It creates the database, warehouse, and `GIT REPOSITORY`,
+1. Open **`sql/bootstrap.sql`** and run it — **no GitHub credentials required** (Snowflake
+   clones this public repo anonymously). It creates the database, warehouse and `GIT REPOSITORY`,
    then calls:
    ```sql
    EXECUTE IMMEDIATE FROM @RIDEFLOW_DEV_DEMO.PIPELINE.RIDEFLOW_REPO/branches/main/sql/setup.sql;
@@ -250,12 +327,14 @@ Snowflake reads the repo directly and fleshes out everything. In a Snowsight wor
    and kicks off a run.
 3. Watch **Monitoring → Task History** (or the `T_RIDEFLOW_MESH` **Graph** tab).
 
-The only step needing your PAT is the bootstrap — Snowflake must authenticate to read a
-private repo. Everything after runs from the repo.
+Forked the repo **privately**? Add a credential secret and reference it from the API
+integration + Git repository — see the commented "private fork" block at the bottom of
+`sql/bootstrap.sql`.
 
 **Or from Python** (same result, parameterized via `deploy/.env`):
 ```bash
-# set GITHUB_REPO_URL, GITHUB_USER, GITHUB_PAT, SNOWFLAKE_COMPUTE_POOL in deploy/.env
+# public repo — no GitHub credentials needed; the Snowflake connection comes from deploy/.env.
+# (Only a PRIVATE fork needs GITHUB_USER + GITHUB_PAT; defaults to the public repo otherwise.)
 python deploy/deploy_project.py --run
 ```
 
@@ -326,10 +405,16 @@ tables the Bronze contracts read.
 
 ## Cost & teardown
 
-The warehouse consumes credits only while queries run (auto-suspends after 60s). To
-remove everything:
+The warehouse consumes credits only while queries run (auto-suspends after 60s); the
+compute pool auto-suspends after 300s. To remove everything:
 
 ```sql
+-- Account-level objects created by Path B (the native Project) — skip if you only ran Path A:
+DROP COMPUTE POOL IF EXISTS RIDEFLOW_POOL;
+DROP API INTEGRATION IF EXISTS GIT_API_RIDEFLOW;
+
+-- Dropping the database also removes its schemas, tables, stages, Git repository,
+-- the NB_PIPELINE notebook, tasks, and any GIT_PAT secret:
 DROP DATABASE IF EXISTS RIDEFLOW_DEV_DEMO;
 DROP WAREHOUSE IF EXISTS RIDEFLOW_WH;
 ```

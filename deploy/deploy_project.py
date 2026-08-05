@@ -36,11 +36,81 @@ _spec.loader.exec_module(_d)
 NOTEBOOKS = [
     ("NB_PIPELINE", "pipeline_driver.ipynb"),   # one parameterized driver for every layer
 ]
-TASK_RESUME_ORDER = [   # linear chain, children first, root last, so the graph is armed
+TASK_RESUME_ORDER = [   # children first, root last, so the graph is armed
     "T_SHARED", "T_REFERENCE", "T_OPS_ZENDESK", "T_OPS_CHECKR", "T_OPS_TWILIO",
     "T_MKT_META", "T_MKT_HUBSPOT", "T_MKT_GA", "T_MKT_GOOGLE_ADS",
     "T_PAYMENTS", "T_MARKETPLACE", "T_RIDEFLOW_MESH",
 ]
+
+# ── Data-mesh DAG definition (task, domain, system, FK-parent tasks) ─────────
+# FK parents mirror the Fabric mesh: marketplace + reference are roots; payments /
+# operations / marketing read marketplace ids; zendesk enriches payments charges;
+# shared marts join every other system ("*").
+ROOT = "T_RIDEFLOW_MESH"
+MESH_SYSTEMS = [  # (task, domain, system, [fk-parent tasks])
+    ("T_MARKETPLACE",     "marketplace", "rideflow",         []),
+    ("T_REFERENCE",       "reference",   "internal",         []),
+    ("T_PAYMENTS",        "payments",    "stripe",           ["T_MARKETPLACE"]),
+    ("T_OPS_CHECKR",      "operations",  "checkr",           ["T_MARKETPLACE"]),
+    ("T_OPS_TWILIO",      "operations",  "twilio",           ["T_MARKETPLACE"]),
+    ("T_OPS_ZENDESK",     "operations",  "zendesk",          ["T_PAYMENTS"]),
+    ("T_MKT_GOOGLE_ADS",  "marketing",   "google_ads",       ["T_MARKETPLACE"]),
+    ("T_MKT_GA",          "marketing",   "google_analytics", ["T_MARKETPLACE"]),
+    ("T_MKT_HUBSPOT",     "marketing",   "hubspot",          ["T_MARKETPLACE"]),
+    ("T_MKT_META",        "marketing",   "meta_ads",         ["T_MARKETPLACE"]),
+    ("T_SHARED",          "shared",      "shared",           ["*"]),  # * = all others
+]
+
+
+def _mesh_after(max_parallel):
+    """Return {task: [predecessor tasks]} for the whole mesh.
+    max_parallel <= 0  → NATURAL FK DAG (maximum concurrency; each task after its FK
+                          parents only). Peak width ≈ 7.
+    max_parallel  = N  → FK-ordered WAVES of ≤N (each task after the whole previous
+                          wave), bounding concurrency to N."""
+    tasks = [t for t, _, _, _ in MESH_SYSTEMS]
+    # FK parents per task; shared's "*" expands to every other system task.
+    fk = {}
+    for t, _, _, ps in MESH_SYSTEMS:
+        fk[t] = [x for x in tasks if x != t] if ps == ["*"] else list(ps)
+    if max_parallel is not None and max_parallel <= 0:
+        return {t: (ps or [ROOT]) for t, ps in fk.items()}
+    # Wave packing over an FK-valid order (MESH_SYSTEMS is already topo-sorted).
+    n = max(1, int(max_parallel)); waves, cur, curset = [], [], set()
+    for t in tasks:
+        if cur and (len(cur) >= n or (set(fk[t]) & curset)):
+            waves.append(cur); cur, curset = [], set()
+        cur.append(t); curset.add(t)
+    if cur:
+        waves.append(cur)
+    after, prev = {}, [ROOT]
+    for wave in waves:
+        for t in wave:
+            after[t] = list(prev)
+        prev = wave
+    return after
+
+
+def gen_task_dag(db, wh, max_parallel):
+    """Build the CREATE TASK statements for the mesh + return (sql, peak_concurrency)."""
+    after = _mesh_after(max_parallel)
+    lines = [f"USE DATABASE {db};", "USE SCHEMA PIPELINE;",
+             f"CREATE OR REPLACE TASK {ROOT} WAREHOUSE = {wh} "
+             f"SCHEDULE = 'USING CRON 0 3 * * * UTC' "
+             f"COMMENT = 'RideFlow data-mesh root' AS SELECT 1;"]
+    dom = {t: (d, s) for t, d, s, _ in MESH_SYSTEMS}
+    for t, _, _, _ in MESH_SYSTEMS:
+        d, s = dom[t]
+        lines.append(
+            f"CREATE OR REPLACE TASK {t} WAREHOUSE = {wh} AFTER {', '.join(after[t])} "
+            f"AS EXECUTE NOTEBOOK {db}.PIPELINE.NB_PIPELINE('domain={d} system={s} layer=all');")
+    # Peak concurrency = widest simultaneously-ready set (approx by dependency level).
+    level = {ROOT: 0}
+    for t, _, _, _ in MESH_SYSTEMS:
+        level[t] = 1 + max(level.get(p, 0) for p in after[t])
+    from collections import Counter
+    peak = max(Counter(level[t] for t, _, _, _ in MESH_SYSTEMS).values())
+    return "\n".join(lines), peak
 
 
 def run(cur, stmt):
@@ -64,17 +134,23 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--branch", default="main")
     ap.add_argument("--run", action="store_true", help="EXECUTE TASK after setup")
+    ap.add_argument("--mesh-max-parallel", type=int, default=0,
+                    help="Max systems the Task DAG runs at once. 0 (default) = natural FK DAG "
+                         "(maximum concurrency, peak ~7-8; pool auto-sizes to MAX_NODES=8 — "
+                         "validated on the trial, whole mesh in ~9 min). N = FK-ordered waves "
+                         "of N (e.g. 2 keeps a tighter node footprint); 1 = fully sequential.")
     args = ap.parse_args()
     _d.load_env()
 
     db = os.getenv("SNOWFLAKE_DATABASE", "RIDEFLOW_DEV_DEMO")
     wh = os.getenv("SNOWFLAKE_WAREHOUSE", "RIDEFLOW_WH")
     pool = os.getenv("SNOWFLAKE_COMPUTE_POOL", "RIDEFLOW_POOL")
-    repo_url = os.getenv("GITHUB_REPO_URL", "").strip()
+    # Public repo → no credentials needed. GITHUB_USER + GITHUB_PAT are only required
+    # if you point GITHUB_REPO_URL at a PRIVATE fork.
+    repo_url = os.getenv("GITHUB_REPO_URL",
+                         "https://github.com/LakeLogic/lakelogic-snowflake-data-mesh-lakehouse").strip()
     gh_user = os.getenv("GITHUB_USER", "").strip()
     pat = os.getenv("GITHUB_PAT", "").strip()
-    if not (repo_url and gh_user and pat):
-        sys.exit("Set GITHUB_REPO_URL, GITHUB_USER, GITHUB_PAT in deploy/.env")
     m = re.match(r"https://github\.com/([^/]+)/", repo_url)
     if not m:
         sys.exit(f"GITHUB_REPO_URL must look like https://github.com/<owner>/<repo>: {repo_url}")
@@ -87,22 +163,43 @@ def main():
     run(cur, f"USE DATABASE {db}")
     run(cur, "CREATE SCHEMA IF NOT EXISTS PIPELINE")
     run(cur, "USE SCHEMA PIPELINE")
-    run(cur, f"CREATE OR REPLACE SECRET GIT_PAT TYPE=PASSWORD USERNAME='{gh_user}' PASSWORD='{pat}'")
-    run(cur, f"""CREATE OR REPLACE API INTEGRATION GIT_API_RIDEFLOW
-        API_PROVIDER = git_https_api
-        API_ALLOWED_PREFIXES = ('https://github.com/{owner}')
-        ALLOWED_AUTHENTICATION_SECRETS = ({db}.PIPELINE.GIT_PAT)
-        ENABLED = TRUE""")
-    run(cur, f"""CREATE OR REPLACE GIT REPOSITORY RIDEFLOW_REPO
-        API_INTEGRATION = GIT_API_RIDEFLOW
-        GIT_CREDENTIALS = {db}.PIPELINE.GIT_PAT
-        ORIGIN = '{repo_url}'""")
+    if gh_user and pat:
+        # Private fork → authenticate with a credential secret.
+        print("  (authenticated: using GITHUB_USER/GITHUB_PAT for a private repo)")
+        run(cur, f"CREATE OR REPLACE SECRET GIT_PAT TYPE=PASSWORD USERNAME='{gh_user}' PASSWORD='{pat}'")
+        run(cur, f"""CREATE OR REPLACE API INTEGRATION GIT_API_RIDEFLOW
+            API_PROVIDER = git_https_api
+            API_ALLOWED_PREFIXES = ('https://github.com/{owner}')
+            ALLOWED_AUTHENTICATION_SECRETS = ({db}.PIPELINE.GIT_PAT)
+            ENABLED = TRUE""")
+        run(cur, f"""CREATE OR REPLACE GIT REPOSITORY RIDEFLOW_REPO
+            API_INTEGRATION = GIT_API_RIDEFLOW
+            GIT_CREDENTIALS = {db}.PIPELINE.GIT_PAT
+            ORIGIN = '{repo_url}'""")
+    else:
+        # Public repo → clone anonymously, no secret.
+        print("  (public repo: cloning without credentials)")
+        run(cur, f"""CREATE OR REPLACE API INTEGRATION GIT_API_RIDEFLOW
+            API_PROVIDER = git_https_api
+            API_ALLOWED_PREFIXES = ('https://github.com/{owner}')
+            ENABLED = TRUE""")
+        run(cur, f"""CREATE OR REPLACE GIT REPOSITORY RIDEFLOW_REPO
+            API_INTEGRATION = GIT_API_RIDEFLOW
+            ORIGIN = '{repo_url}'""")
     run(cur, f"ALTER GIT REPOSITORY RIDEFLOW_REPO FETCH")
 
-    print("── Compute pool (container runtime for Notebooks) ───────────")
+    # Size the pool to the DAG's peak concurrency (+1 headroom), capped at 8 so a
+    # trial can't be asked for an absurd number of nodes. A wider fan-out than the
+    # pool can schedule throws 'unschedulable in full compute pool'.
+    dag_sql, peak = gen_task_dag(db, wh, args.mesh_max_parallel)
+    pool_nodes = min(8, peak + 1)
+    print(f"── Compute pool (mesh_max_parallel={args.mesh_max_parallel}, peak≈{peak} "
+          f"→ MAX_NODES={pool_nodes}) ───")
     run(cur, f"""CREATE COMPUTE POOL IF NOT EXISTS {pool}
-        MIN_NODES = 1 MAX_NODES = 2 INSTANCE_FAMILY = CPU_X64_XS
+        MIN_NODES = 1 MAX_NODES = {pool_nodes} INSTANCE_FAMILY = CPU_X64_XS
         AUTO_SUSPEND_SECS = 300""")
+    # Ensure an already-existing pool is resized too (CREATE IF NOT EXISTS is a no-op).
+    run(cur, f"ALTER COMPUTE POOL {pool} SET MAX_NODES = {pool_nodes}")
 
     print("── Stage the LakeLogic wheelhouse (headless-run install) ────")
     # Headless EXECUTE NOTEBOOK task runs don't have Snowflake's internal PyPI mirror, so
@@ -142,16 +239,16 @@ def main():
         for t in left:
             try: cur.execute(f"DROP TASK IF EXISTS {db}.PIPELINE.{t}")
             except Exception: pass
-    tsql = (REPO / "tasks" / "tasks.sql").read_text(encoding="utf-8")
-    tsql = tsql.replace("{{DB}}", db).replace("{{WH}}", wh)
-    for stmt in sql_statements(tsql):
+    # DAG is generated from MESH_SYSTEMS per --mesh-max-parallel (dag_sql built above);
+    # tasks/tasks.sql is kept as the human-readable cap-2 reference snapshot.
+    for stmt in sql_statements(dag_sql):
         run(cur, stmt)
     for t in TASK_RESUME_ORDER:
         run(cur, f"ALTER TASK {db}.PIPELINE.{t} RESUME")
 
     if args.run:
         print("── Kick off a live run ──────────────────────────────────────")
-        run(cur, f"EXECUTE TASK {db}.PIPELINE.T_RIDEFLOW_MARKETPLACE")
+        run(cur, f"EXECUTE TASK {db}.PIPELINE.T_RIDEFLOW_MESH")  # root task kicks the whole graph
 
     conn.commit()
     print("✅ Snowflake Project deployed. Snowsight → Projects (Notebooks), "
