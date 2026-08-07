@@ -14,15 +14,12 @@ model:
   fields:
   - name: TRIP_ID
     type: string
-    required: true
     description: Unique trip identifier
   - name: RIDER_ID
     type: string
-    required: true
     description: FK to rider_profiles
   - name: DRIVER_ID
     type: string
-    required: true
     description: FK to driver_profiles
   - name: TRIP_TYPE
     type: string

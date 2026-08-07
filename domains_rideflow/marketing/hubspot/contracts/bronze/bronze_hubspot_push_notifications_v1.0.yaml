@@ -12,7 +12,6 @@ model:
   fields:
   - name: NOTIFICATION_ID
     type: string
-    required: true
     description: Notification ID
   - name: RIDER_ID
     type: string

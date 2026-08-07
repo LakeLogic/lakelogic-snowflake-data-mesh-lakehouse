@@ -13,7 +13,6 @@ model:
   fields:
   - name: RIDER_ID
     type: string
-    required: true
     description: Unique rider identifier
   - name: NAME
     type: string

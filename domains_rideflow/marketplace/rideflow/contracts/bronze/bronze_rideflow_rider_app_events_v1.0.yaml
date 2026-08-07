@@ -13,11 +13,9 @@ model:
   fields:
   - name: EVENT_ID
     type: string
-    required: true
     description: Unique event identifier
   - name: RIDER_ID
     type: string
-    required: true
     description: FK to rider_profiles
   - name: DEVICE_ID
     type: string

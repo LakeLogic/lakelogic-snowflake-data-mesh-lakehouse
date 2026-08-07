@@ -12,11 +12,9 @@ model:
   fields:
   - name: CAMPAIGN_ID
     type: string
-    required: true
     description: HubSpot campaign ID
   - name: RECIPIENT_EMAIL
     type: string
-    required: true
     pii: true
     description: Recipient email address
   - name: RECIPIENT_NAME

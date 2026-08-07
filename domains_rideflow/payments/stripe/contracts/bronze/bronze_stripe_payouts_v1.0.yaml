@@ -13,11 +13,9 @@ model:
   fields:
   - name: PAYOUT_ID
     type: string
-    required: true
     description: Stripe payout ID
   - name: DRIVER_ID
     type: string
-    required: true
     description: FK to marketplace driver
     foreign_key:
       contract: '{bronze_layer}_rideflow_driver_profiles'

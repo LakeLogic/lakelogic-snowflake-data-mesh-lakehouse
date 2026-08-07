@@ -12,11 +12,9 @@ model:
   fields:
   - name: MESSAGE_SID
     type: string
-    required: true
     description: Twilio message SID
   - name: RECIPIENT_PHONE
     type: string
-    required: true
     pii: true
     description: Recipient phone number
   - name: SENDER_PHONE

@@ -12,11 +12,9 @@ model:
   fields:
   - name: REFUND_ID
     type: string
-    required: true
     description: Stripe refund ID
   - name: CHARGE_ID
     type: string
-    required: true
     description: FK to parent charge
     foreign_key:
       contract: '{bronze_layer}_{system}_charges'

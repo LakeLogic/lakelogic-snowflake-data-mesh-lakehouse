@@ -12,7 +12,6 @@ model:
   fields:
   - name: TICKET_ID
     type: string
-    required: true
     description: Zendesk ticket ID
   - name: ENTRY_POINT
     type: string
@@ -45,7 +44,6 @@ model:
       column: CHARGE_ID
   - name: REQUESTER_EMAIL
     type: string
-    required: true
     pii: true
     description: Requester email
   - name: REQUESTER_NAME

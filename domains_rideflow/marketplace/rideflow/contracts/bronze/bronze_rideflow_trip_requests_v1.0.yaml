@@ -13,11 +13,9 @@ model:
   fields:
   - name: REQUEST_ID
     type: string
-    required: true
     description: Unique request identifier
   - name: RIDER_ID
     type: string
-    required: true
     description: FK to rider_profiles
   - name: TRIP_TYPE
     type: string

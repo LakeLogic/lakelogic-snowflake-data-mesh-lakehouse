@@ -13,18 +13,15 @@ model:
   fields:
   - name: EVENT_NAME
     type: string
-    required: true
     description: GA4 event name
   - name: EVENT_TIMESTAMP
     type: string
-    required: true
     description: Event timestamp (microseconds)
   - name: EVENT_DATE
     type: string
     description: Event date YYYYMMDD
   - name: USER_PSEUDO_ID
     type: string
-    required: true
     description: GA4 anonymous client ID
   - name: USER_ID
     type: string

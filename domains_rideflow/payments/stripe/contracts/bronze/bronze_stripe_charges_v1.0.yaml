@@ -12,11 +12,9 @@ model:
   fields:
   - name: CHARGE_ID
     type: string
-    required: true
     description: Stripe charge ID
   - name: RIDER_ID
     type: string
-    required: true
     description: FK to marketplace rider
     foreign_key:
       contract: '{bronze_layer}_rideflow_rider_profiles'

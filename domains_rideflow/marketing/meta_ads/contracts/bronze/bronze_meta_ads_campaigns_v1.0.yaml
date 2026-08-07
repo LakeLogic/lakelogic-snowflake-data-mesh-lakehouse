@@ -11,11 +11,9 @@ model:
   fields:
   - name: CAMPAIGN_ID
     type: string
-    required: true
     description: Meta campaign ID
   - name: CAMPAIGN_NAME
     type: string
-    required: true
     description: Campaign name
   - name: ADSET_ID
     type: string

@@ -12,11 +12,9 @@ model:
   fields:
   - name: SESSION_ID
     type: string
-    required: true
     description: GA4 session ID
   - name: USER_PSEUDO_ID
     type: string
-    required: true
     description: GA4 anonymous client ID
   - name: USER_ID
     type: string
