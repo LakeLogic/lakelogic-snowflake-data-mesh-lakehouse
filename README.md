@@ -1,22 +1,57 @@
-# Multi-Domain Lakehouse on Snowflake — a Governed Data Mesh Implementation
+**WORKING SNOWFLAKE LAKEHOUSE**
 
-*One Snowflake lakehouse, many domain-owned data products — implementing the principles of a
-**data mesh** (domain ownership, data as a product, a self-service platform, and federated
-governance) with data contracts, quarantine and quality gates.*
+# Build and run a governed data mesh on Snowflake
 
-> **Let every team own its data — without losing control of quality, PII or trust.**
-> This is a working blueprint for a governed data mesh on Snowflake: domain teams ship their own
-> data products, while one shared layer applies schema, quality, lineage and PII rules across all
-> of them — and emits the run evidence to show it. The native path executes through Snowflake
-> Notebooks and a Snowflake Task DAG, without an external orchestrator.
+A working implementation of six domain-owned RideFlow data products and eleven synthetic source
+systems, defined with portable [Open Lakehouse Contracts](https://lakelogic.github.io/open-lakehouse-contract/)
+and executed by [LakeLogic Core](https://pypi.org/project/lakelogic/) through Snowflake Notebooks and
+a native Snowflake Task DAG.
 
-A working reference implementation on Snowflake, powered by
-[LakeLogic](https://pypi.org/project/lakelogic/): **six domains own their Bronze→Silver→Gold data
-products** in one lakehouse, all sharing a single contract-driven layer for quality, quarantine,
-lineage and dependencies. It runs natively as a Snowflake Task DAG — no external orchestrator.
+**Schema checks · quality gates · quarantine · lineage · PII controls · service levels**
 
-The example is **RideFlow**, a fictional ride-hailing business (all data synthetic, generated
-FK-consistent from the contracts):
+> **Reference environment:** RideFlow is a fictional ride-hailing business using synthetic,
+> FK-consistent data. This is a community reference from the LakeLogic team, not an official
+> Snowflake product.
+
+![The full RideFlow data mesh running as a Snowflake Task Graph — all 11 systems succeeded](docs/images/snowflake_task_graph_run.png)
+
+Each domain owns its contracts and products; the shared platform applies quality, governance and
+dependency controls. **One command deploys and runs the whole implementation** — see
+[Deploy & run the pipelines](#deploy--run-the-pipelines).
+
+## What this proves
+
+- **Domain ownership** — teams own their contracts and data products.
+- **Shared controls** — schema checks, row rules, dataset gates, SLO checks and
+  dependency-aware execution use common machinery.
+- **Explained quarantine** — failing rows are retained with the rule and reason that
+  rejected them, never silently dropped.
+- **Quality gates** — a dataset-level `min_good_ratio` gate can stop an unsafe run.
+- **Cross-domain products** — declared dependencies connect products across teams.
+
+## See it in action
+
+Six teams, eleven source systems and one contract-driven control layer, executed through
+**Snowflake Notebooks and a Snowflake Task DAG** without an external orchestrator.
+
+🔒 **Auditable governance evidence, by construction.** Selected Gold dimensions demonstrate
+SCD Type 2 history and row-level lineage back to source, and PII columns are masked by contract —
+names, emails and phones land `***REDACTED***` unless a policy says otherwise.
+
+![A governed Gold dimension — SCD Type 2 keys with PII columns masked by contract](docs/images/snowflake_gold_masked_scd2.png)
+
+🧩 **Every domain, the same contract-driven pattern.** Each product is one declarative step
+(`domain / system / layer`) — once source data lands, teams add processing by defining a contract,
+not by writing another medallion pipeline.
+
+![A RideFlow data product defined as a single contract-driven task](docs/images/snowflake_task_definition.png)
+
+📈 **Trustworthy by default, observable end-to-end.** Every run and its data-quality summary is
+tracked natively — so a failed load is visible immediately, not discovered in a dashboard weeks later.
+
+![Run history for the RideFlow mesh — every graph run tracked in Snowsight](docs/images/snowflake_task_run_history.png)
+
+## Reference estate
 
 ```text
 RideFlow · one Snowflake lakehouse · 6 domains · 11 source systems
@@ -39,49 +74,6 @@ Every domain runs the same medallion — Bronze (raw, all-string, schema-flexibl
 ├── Reference    (internal)      →  Bronze → Silver → Gold   ·  cities, fx rates
 └── Shared       (cross-domain marts)   →  Gold   ·  products that join every domain
 ```
-
-Each domain owns its contracts and products; the platform gives them shared quality, governance and
-dependency controls. **One command deploys and runs the whole thing** — see
-[Deploy & run the pipelines](#deploy--run-the-pipelines).
-
-> A community reference from the LakeLogic team, not an official Snowflake product.
-
-## What this proves
-
-- **Domain ownership** — teams own their contracts and data products.
-- **Shared controls** — schema checks, row rules, dataset gates, SLO checks and
-  dependency-aware execution use common machinery.
-- **Explained quarantine** — failing rows are retained with the rule and reason that
-  rejected them, never silently dropped.
-- **Quality gates** — a dataset-level `min_good_ratio` gate can stop an unsafe run.
-- **Cross-domain products** — declared dependencies connect products across teams.
-
-## See it in action
-
-Six teams, eleven source systems, one set of rules — executed through **Snowflake Notebooks and a
-Snowflake Task DAG**, with no external orchestrator and no infrastructure to babysit.
-
-🟢 **The whole company's data estate, rebuilt on one schedule.** Every domain's Bronze→Silver→Gold
-products run as a single dependency-aware Task Graph — here, all 11 systems green in ~9 minutes.
-
-![The full RideFlow data mesh running as a Snowflake Task Graph — all 11 systems succeeded](docs/images/snowflake_task_graph_run.png)
-
-🔒 **Auditable governance evidence, by construction.** Selected Gold dimensions demonstrate
-SCD Type 2 history and row-level lineage back to source, and PII columns are masked by contract —
-names, emails and phones land `***REDACTED***` unless a policy says otherwise.
-
-![A governed Gold dimension — SCD Type 2 keys with PII columns masked by contract](docs/images/snowflake_gold_masked_scd2.png)
-
-🧩 **Every domain, the same contract-driven pattern.** Each product is one declarative step
-(`domain / system / layer`) — once source data lands, teams add processing by defining a contract,
-not by writing another medallion pipeline.
-
-![A RideFlow data product defined as a single contract-driven task](docs/images/snowflake_task_definition.png)
-
-📈 **Trustworthy by default, observable end-to-end.** Every run and its data-quality summary is
-tracked natively — so a failed load is visible immediately, not discovered in a dashboard weeks later.
-
-![Run history for the RideFlow mesh — every graph run tracked in Snowsight](docs/images/snowflake_task_run_history.png)
 
 ## How it maps to Snowflake
 
