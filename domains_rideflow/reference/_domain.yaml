@@ -8,9 +8,9 @@ ownership:
   domain_owner: Platform Data Engineering
   team: data_engineering
   contacts:
-    - name: Platform Data Lead
-      role: oncall
-      email: ${DOMAIN_CONTACT_REFERENCE:-${DOMAIN_CONTACT_MARKETPLACE}}
+  - name: Platform Data Lead
+    role: oncall
+    email: ${DOMAIN_CONTACT_REFERENCE:-${DOMAIN_CONTACT_MARKETPLACE}}
   cost_center: platform_engineering
   jira_project: KAN
 
@@ -19,16 +19,14 @@ ownership:
 slo:
   freshness:
     bronze:
-      max_delay_minutes: 1440   # daily refresh acceptable
-      check_column: _lakelogic_processed_at
-      max_source_delay_minutes: 2880
-      source_check_columns: [updated_at, last_modified, created_at]
+      max_delay_minutes: 2880   # daily refresh acceptable
+      check_columns: [updated_at, last_modified, created_at, _lakelogic_processed_at]
     silver:
       max_delay_minutes: 1440
-      check_column: _lakelogic_processed_at
+      check_columns: [_lakelogic_processed_at]
     gold:
       max_delay_minutes: 999999
-      check_column: _lakelogic_processed_at
+      check_columns: [_lakelogic_processed_at]
   row_count:
     bronze:
       min_rows: 1
@@ -65,16 +63,16 @@ cost:
 
 # ── Notifications ────────────────────────────────────────────────────────────
 notifications:
-  - type: slack
-    target: "#data-platform-alerts"
-    on_events: [failed]
-  - type: slack
-    target: "#data-platform-slo-alerts"
-    on_events: [slo_breach]
-  - type: email
-    targets:
-      - "platform-data@lakelogic.com"
-    on_events: [failed, slo_breach]
+- type: slack
+  target: "#data-platform-alerts"
+  on_events: [failed]
+- type: slack
+  target: "#data-platform-slo-alerts"
+  on_events: [slo_breach]
+- type: email
+  targets:
+  - "platform-data@lakelogic.com"
+  on_events: [failed, slo_breach]
 
 # ── Observatory Telemetry ────────────────────────────────────────────────────
 observatory:

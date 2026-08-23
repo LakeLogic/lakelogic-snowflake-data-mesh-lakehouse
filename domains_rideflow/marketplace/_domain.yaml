@@ -5,9 +5,9 @@ ownership:
   domain_owner: Platform Data Engineering
   team: data_engineering
   contacts:
-    - name: Platform Data Lead-test
-      role: oncall
-      email: ${DOMAIN_CONTACT_MARKETPLACE}
+  - name: Platform Data Lead-test
+    role: oncall
+    email: ${DOMAIN_CONTACT_MARKETPLACE}
   cost_center: platform_engineering
   jira_project: KAN
 
@@ -15,18 +15,14 @@ ownership:
 slo:
   freshness:
     bronze:
-      max_delay_minutes: 30
-      check_column: _lakelogic_processed_at
-      max_source_delay_minutes: 60
-      source_check_columns: [updated_at, last_modified, event_timestamp, created_at]
+      max_delay_minutes: 60
+      check_columns: [updated_at, last_modified, event_timestamp, created_at, _lakelogic_processed_at]
     silver:
-      max_delay_minutes: 120
-      check_column: _lakelogic_processed_at
-      max_source_delay_minutes: 180
-      source_check_columns: [updated_at, last_modified, event_timestamp, created_at]
+      max_delay_minutes: 180
+      check_columns: [updated_at, last_modified, event_timestamp, created_at, _lakelogic_processed_at]
     gold:
       max_delay_minutes: 999999
-      check_column: _lakelogic_processed_at
+      check_columns: [_lakelogic_processed_at]
   row_count:
     bronze:
       min_rows: 1
@@ -81,16 +77,16 @@ cost:
 
 # ── Notifications ────────────────────────────────────────────────────────────
 notifications:
-  - type: slack
-    target: "#data-platform-alerts"
-    on_events: [failed]
-  - type: slack
-    target: "#data-platform-slo-alerts"
-    on_events: [slo_breach]
-  - type: email
-    targets:
-      - "platform-data@lakelogic.com"
-    on_events: [failed, slo_breach]
+- type: slack
+  target: "#data-platform-alerts"
+  on_events: [failed]
+- type: slack
+  target: "#data-platform-slo-alerts"
+  on_events: [slo_breach]
+- type: email
+  targets:
+  - "platform-data@lakelogic.com"
+  on_events: [failed, slo_breach]
 
 # ── Observatory Telemetry ────────────────────────────────────────────────────
 observatory:
@@ -129,11 +125,11 @@ compliance:
     bcbs_239:
       applicable: false
   shared_with:
-    - name: Klaviyo Inc.
-      role: processor
-      country: US
-      agreement: DPA
-      mechanism: SCCs
+  - name: Klaviyo Inc.
+    role: processor
+    country: US
+    agreement: DPA
+    mechanism: SCCs
   cross_border_transfer: true
   transfer_mechanism: SCCs
   erasure:

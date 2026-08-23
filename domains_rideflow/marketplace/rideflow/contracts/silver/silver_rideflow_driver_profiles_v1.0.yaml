@@ -64,10 +64,11 @@ quality:
   - name: valid_email
     sql: email like '%@%'
 transformations:
-- deduplicate_by_latest:
-    key_columns:
+- deduplicate:
+    on:
     - driver_id
-    timestamp_column: updated_at
+    sort_by: [updated_at]
+    order: desc
 source:
   type: table
   path: table:{domain_catalog}.bronze_rideflow_driver_profiles
