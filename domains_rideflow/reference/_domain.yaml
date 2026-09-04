@@ -65,14 +65,14 @@ cost:
 notifications:
 - type: slack
   target: "#data-platform-alerts"
-  on_events: [failed]
+  on_events: [failure]
 - type: slack
   target: "#data-platform-slo-alerts"
   on_events: [slo_breach]
 - type: email
   targets:
   - "platform-data@lakelogic.com"
-  on_events: [failed, slo_breach]
+  on_events: [failure, slo_breach]
 
 # ── Observatory Telemetry ────────────────────────────────────────────────────
 observatory:
