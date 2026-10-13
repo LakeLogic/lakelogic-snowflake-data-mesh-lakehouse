@@ -1,0 +1,54 @@
+version: 1.0.0
+
+info:
+  title: "Silver \u2014 Internal FX Rates Daily"
+  table_name: '{silver_layer}_internal_fx_rates_daily'
+  description: 'Cleaned daily FX rates with typed dates and normalized currency codes.
+    Deduplicated on (rate_date, base_currency, quote_currency). Feeds fact_fx_rate_daily.
+
+    '
+  target_layer: silver
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: RATE_DATE
+    type: date
+    required: true
+  - name: BASE_CURRENCY
+    type: string
+    required: true
+  - name: QUOTE_CURRENCY
+    type: string
+    required: true
+  - name: RATE
+    type: float
+    required: true
+  - name: SOURCE_FEED
+    type: string
+
+quality:
+  row_rules: []
+  dataset_rules: []
+
+primary_key:
+- RATE_DATE
+- BASE_CURRENCY
+- QUOTE_CURRENCY
+
+transformations:
+- deduplicate:
+    by:
+    - RATE_DATE
+    - BASE_CURRENCY
+    - QUOTE_CURRENCY
+    sort_by:
+    - RATE_DATE
+    - BASE_CURRENCY
+    - QUOTE_CURRENCY
+
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_fx_rates_daily
+  load_mode: full

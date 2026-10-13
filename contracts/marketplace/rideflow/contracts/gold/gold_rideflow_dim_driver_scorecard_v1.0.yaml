@@ -1,0 +1,64 @@
+version: 1.0.0
+
+info:
+  title: "Gold \u2014 Dim Driver Scorecard"
+  table_name: '{gold_layer}_rideflow_dim_driver_scorecard'
+  description: Per-driver performance scorecard with trip counts, earnings, and ratings.
+  target_layer: gold
+  domain: marketplace
+  system: rideflow
+
+source:
+  type: table
+  path: table:{domain_catalog}.silver_rideflow_trips
+  load_mode: full
+
+primary_key:
+- DRIVER_ID
+
+links:
+- name: silver_trips_full
+  path: table:{domain_catalog}.silver_rideflow_trips
+  type: table
+- name: dim_driver
+  path: table:{domain_catalog}.gold_rideflow_dim_driver
+  type: table
+
+model:
+  fields:
+  - name: DRIVER_ID
+    type: string
+    required: true
+  - name: DRIVER_SK
+    type: string
+    description: FK to gold_rideflow_dim_driver (current version); '-1' = unknown
+    foreign_key:
+      contract: '{gold_layer}_rideflow_dim_driver'
+      column: DRIVER_SK
+  - name: TOTAL_TRIPS
+    type: integer
+  - name: TOTAL_EARNINGS
+    type: float
+  - name: AVG_DRIVER_RATING
+    type: float
+  - name: AVG_DISTANCE_KM
+    type: float
+  - name: AVG_DURATION_MINUTES
+    type: float
+
+transformations:
+- sql: "-- Aggregate all-time per-driver metrics from the FULL Silver table (via\n\
+    -- link), then resolve the Kimball surrogate key against the CURRENT\n-- dim_driver\
+    \ version. Unmatched drivers \u2192 '-1'. Explicit columns + is_current\n-- boolean\
+    \ predicate keep this portable across Spark and DuckDB.\nWITH agg AS (\n    SELECT\n\
+    \        driver_id,\n        COUNT(*)                   AS total_trips,\n    \
+    \    SUM(fare_amount)           AS total_earnings,\n        AVG(driver_rating)\
+    \         AS avg_driver_rating,\n        AVG(distance_km)           AS avg_distance_km,\n\
+    \        AVG(duration_minutes)      AS avg_duration_minutes\n    FROM silver_trips_full\n\
+    \    WHERE driver_id IS NOT NULL\n    -- Only re-aggregate drivers that received\
+    \ new trips. On a full load,\n    -- `source` contains everything, so this safely\
+    \ selects all drivers.\n    AND driver_id IN (SELECT DISTINCT driver_id FROM source)\n\
+    \    GROUP BY driver_id\n)\nSELECT\n    a.driver_id,\n    COALESCE(d.driver_sk,\
+    \ '-1') AS driver_sk,\n    a.total_trips,\n    a.total_earnings,\n    a.avg_driver_rating,\n\
+    \    a.avg_distance_km,\n    a.avg_duration_minutes\nFROM agg a\nLEFT JOIN dim_driver\
+    \ d\n  ON  a.driver_id = d.driver_id\n  AND d.is_current = true\n"

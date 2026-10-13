@@ -143,4 +143,4 @@ external bucket with the cloud's own tools/SDK, then the external tables read th
 - **GCP:** `gsutil -m cp -r` / `google-cloud-storage`
 
 A `--external` landing mode (generate → upload to the bucket → create external tables) can
-be wired into `runtime/landing.py` once a bucket + credentials are configured in `deploy/.env`.
+be wired into `platform/snowflake/runtime/landing.py` once a bucket + credentials are configured in `platform/snowflake/deploy/.env`.

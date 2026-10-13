@@ -1,0 +1,48 @@
+version: 1.0.0
+
+info:
+  title: "Gold \u2014 Dim Surge Tier"
+  table_name: '{gold_layer}_internal_dim_surge_tier'
+  description: 'Surge pricing tier brackets (1.0x, 1.3x, 1.7x, 2.5x, 4.0x) with display
+    labels. Joined by trip facts and surge_pricing_inference for analysis.
+
+    '
+  target_layer: gold
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: SURGE_TIER_CODE
+    type: string
+    required: true
+    description: Internal code (e.g. TIER_1, TIER_2, ...)
+  - name: MULTIPLIER_MIN
+    type: float
+    description: Inclusive lower bound of the surge multiplier
+  - name: MULTIPLIER_MAX
+    type: float
+    description: Exclusive upper bound
+  - name: DISPLAY_LABEL
+    type: string
+    description: User-facing label (e.g. 'Surge 1.3x')
+  - name: NOTIFY_RIDER
+    type: boolean
+    description: Whether riders are warned before booking
+
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: SURGE_TIER_CODE
+
+primary_key:
+- SURGE_TIER_CODE
+
+source:
+  type: table
+  path: table:{catalog}.LANDING.internal_dim_surge_tier_seed
+  format: csv
+  options:
+    header: 'true'
+  load_mode: full
+  watermark_strategy: none

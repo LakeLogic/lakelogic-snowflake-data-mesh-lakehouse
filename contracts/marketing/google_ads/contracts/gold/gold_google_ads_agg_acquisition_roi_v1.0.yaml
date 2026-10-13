@@ -1,0 +1,74 @@
+version: 1.0.0
+
+info:
+  title: "Gold \u2014 Agg Google Ads Acquisition ROI"
+  table_name: '{gold_layer}_google_ads_agg_acquisition_roi'
+  description: 'Daily pre-aggregated Google Ads spend metrics rolled up across all
+    campaigns. One row per reported_date. CAC and conversion rate are derived from
+    sum(spend), sum(clicks), sum(conversions).
+
+    '
+  target_layer: gold
+  domain: marketing
+  system: google_ads
+
+model:
+  fields:
+  - name: DATE
+    type: string
+    required: true
+    description: Aggregation grain (kept as string to match silver type)
+  - name: TOTAL_COST
+    type: float
+  - name: TOTAL_IMPRESSIONS
+    type: long
+  - name: TOTAL_CLICKS
+    type: long
+  - name: TOTAL_CONVERSIONS
+    type: long
+  - name: TOTAL_CONVERSION_VALUE
+    type: float
+  - name: CAC
+    type: float
+    description: Cost per Acquisition = total_cost / total_conversions
+  - name: CTR
+    type: float
+    description: Click-through rate = total_clicks / total_impressions
+  - name: CONVERSION_RATE
+    type: float
+    description: = total_conversions / total_clicks
+  - name: ROAS
+    type: float
+    description: Return on Ad Spend = total_conversion_value / total_cost
+
+primary_key:
+- DATE
+
+source:
+  type: table
+  path: table:{domain_catalog}.silver_google_ads_campaigns
+  load_mode: full
+
+links:
+- name: silver_campaigns_full
+  path: table:{domain_catalog}.silver_google_ads_campaigns
+  type: table
+
+transformations:
+- phase: pre
+  sql: "SELECT\n  date,\n  total_cost, total_impressions, total_clicks,\n  total_conversions,\
+    \ total_conversion_value,\n  CASE WHEN total_conversions > 0 THEN total_cost /\
+    \ total_conversions ELSE NULL END AS cac,\n  CASE WHEN total_impressions > 0 THEN\
+    \ CAST(total_clicks AS DOUBLE) / total_impressions ELSE NULL END AS ctr,\n  CASE\
+    \ WHEN total_clicks > 0 THEN CAST(total_conversions AS DOUBLE) / total_clicks\
+    \ ELSE NULL END AS conversion_rate,\n  CASE WHEN total_cost > 0 THEN total_conversion_value\
+    \ / total_cost ELSE NULL END AS roas\nFROM (\n  SELECT\n    date,\n    SUM(CAST(cost\
+    \ AS DOUBLE))              AS total_cost,\n    SUM(CAST(impressions AS BIGINT))\
+    \       AS total_impressions,\n    SUM(CAST(clicks AS BIGINT))            AS total_clicks,\n\
+    \    SUM(CAST(conversions AS BIGINT))       AS total_conversions,\n    SUM(CAST(conversion_value\
+    \ AS DOUBLE))  AS total_conversion_value\n  FROM silver_campaigns_full\n  GROUP\
+    \ BY date\n)\n"
+
+quality:
+  row_rules: []
+  dataset_rules: []

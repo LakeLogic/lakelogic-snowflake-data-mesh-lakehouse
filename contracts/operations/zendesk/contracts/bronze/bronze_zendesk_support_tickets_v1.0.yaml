@@ -1,0 +1,97 @@
+version: 1.0.0
+
+info:
+  title: "Bronze \u2014 Zendesk Support Tickets"
+  table_name: '{bronze_layer}_{system}_support_tickets'
+  description: 'Raw support ticket data from Zendesk. One row per ticket.
+
+    '
+  target_layer: bronze
+  domain: operations
+  system: zendesk
+
+model:
+  fields:
+  - name: TICKET_ID
+    type: string
+    description: Zendesk ticket ID
+  - name: ENTRY_POINT
+    type: string
+    description: "How the ticket was filed \u2014 determines which FKs are populated"
+  - name: RIDER_ID
+    type: string
+    description: FK to marketplace rider (~85% populated)
+    foreign_key:
+      contract: '{bronze_layer}_rideflow_rider_profiles'
+      column: RIDER_ID
+  - name: TRIP_ID
+    type: string
+    description: "FK to marketplace trip (~75% \u2014 present when ticket originates\
+      \ from a trip)"
+    foreign_key:
+      contract: '{bronze_layer}_rideflow_trip_completed'
+      column: TRIP_ID
+  - name: DRIVER_ID
+    type: string
+    description: "FK to marketplace driver (~55% \u2014 present when ticket about\
+      \ a driver)"
+    foreign_key:
+      contract: '{bronze_layer}_rideflow_driver_profiles'
+      column: DRIVER_ID
+  - name: CHARGE_ID
+    type: string
+    description: "FK to stripe charge (~25% \u2014 present on payment/refund tickets)"
+    foreign_key:
+      contract: '{bronze_layer}_stripe_charges'
+      column: CHARGE_ID
+  - name: REQUESTER_EMAIL
+    type: string
+    pii: true
+    description: Requester email
+  - name: REQUESTER_NAME
+    type: string
+    pii: true
+    description: Requester display name
+  - name: REQUESTER_PHONE
+    type: string
+    pii: true
+    description: Requester phone number
+  - name: SUBJECT
+    type: string
+    description: Ticket subject
+  - name: TICKET_DESCRIPTION
+    type: string
+    pii: true
+    description: Ticket body (may contain PII)
+  - name: STATUS
+    type: string
+    description: new, open, pending, solved, closed
+  - name: PRIORITY
+    type: string
+    description: low, normal, high, urgent
+  - name: CHANNEL
+    type: string
+    description: email, chat, phone, web
+  - name: ASSIGNEE
+    type: string
+    description: Assigned agent
+  - name: TAGS_JSON
+    type: string
+    description: Tags array as JSON
+  - name: CREATED_AT
+    type: string
+    description: Ticket creation timestamp
+  - name: UPDATED_AT
+    type: string
+    description: Last update timestamp
+  - name: SOLVED_AT
+    type: string
+    description: Resolution timestamp
+  - name: SATISFACTION_RATING
+    type: string
+    description: CSAT score
+
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_support_tickets
+  load_mode: full

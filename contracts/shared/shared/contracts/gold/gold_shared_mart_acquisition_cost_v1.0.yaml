@@ -1,0 +1,99 @@
+version: 1.0.0
+
+info:
+  title: "Gold \u2014 Mart Acquisition Cost"
+  table_name: '{gold_layer}_shared_mart_acquisition_cost'
+  description: "Customer Acquisition Cost (CAC) per (kpi_date, channel, campaign).\
+    \ Channel spend comes from the three marketing campaign Silver tables (google_ads,\
+    \ meta_ads, hubspot email + push); attributed new-rider count comes from silver_rideflow_rider_profiles\
+    \ joined on acquisition_campaign_id. CAC = spend \xF7 attributed_riders.\n"
+  target_layer: gold
+  domain: shared
+  system: shared
+
+primary_key:
+- KPI_DATE
+- CHANNEL
+- CAMPAIGN_ID
+
+model:
+  fields:
+  - name: KPI_DATE
+    type: date
+    required: true
+  - name: CHANNEL
+    type: string
+    required: true
+    description: google_ads | meta_ads | hubspot_email
+  - name: CAMPAIGN_ID
+    type: string
+    required: true
+  - name: CAMPAIGN_NAME
+    type: string
+  - name: SPEND_AMOUNT
+    type: float
+    description: Channel ad spend in GBP for the day.
+  - name: IMPRESSIONS
+    type: integer
+  - name: CLICKS
+    type: integer
+  - name: ATTRIBUTED_NEW_RIDERS
+    type: integer
+    description: Riders whose signup_date matches kpi_date AND whose acquisition_campaign_id
+      matches.
+  - name: COST_PER_ACQUISITION
+    type: float
+    description: "spend_amount \xF7 NULLIF(attributed_new_riders, 0)."
+  - name: CONVERSION_RATE
+    type: float
+    description: "attributed_new_riders \xF7 NULLIF(clicks, 0)."
+
+source:
+  type: table
+  path: table:{catalog}.marketing.silver_google_ads_campaigns
+  load_mode: full
+
+transformations:
+- phase: pre
+  sql: "WITH g AS (\n  SELECT to_date(date) AS kpi_date, 'google_ads' AS channel,\
+    \ campaign_id, campaign_name,\n         CAST(cost AS double) AS spend, CAST(impressions\
+    \ AS int) AS impressions, CAST(clicks AS int) AS clicks\n  FROM mkt_google\n),\n\
+    m AS (\n  SELECT to_date(date) AS kpi_date, 'meta_ads' AS channel, campaign_id,\
+    \ campaign_name,\n         CAST(spend AS double) AS spend, CAST(impressions AS\
+    \ int) AS impressions, CAST(clicks AS int) AS clicks\n  FROM silver_meta_ads_campaigns\n\
+    ),\nh AS (\n  SELECT to_date(sent_at) AS kpi_date, 'hubspot_email' AS channel,\
+    \ campaign_id, campaign_name,\n         0.0 AS spend, 1 AS impressions,\n    \
+    \     CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END AS clicks\n  FROM silver_hubspot_email_campaigns\n\
+    ),\nu AS (SELECT * FROM g UNION ALL SELECT * FROM m UNION ALL SELECT * FROM h)\n\
+    SELECT kpi_date, channel, campaign_id,\n       MAX(campaign_name)            AS\
+    \ campaign_name,\n       SUM(spend)                    AS spend_amount,\n    \
+    \   CAST(SUM(impressions) AS int) AS impressions,\n       CAST(SUM(clicks) AS\
+    \ int)      AS clicks,\n       CAST(NULL AS int)             AS attributed_new_riders,\n\
+    \       CAST(NULL AS double)          AS cost_per_acquisition,\n       CAST(NULL\
+    \ AS double)          AS conversion_rate\nFROM u\nGROUP BY kpi_date, channel,\
+    \ campaign_id\n"
+
+quality:
+  row_rules:
+  - name: spend_non_negative
+    sql: spend_amount >= 0
+  - name: valid_channel
+    sql: channel IN ('google_ads','meta_ads','hubspot_email')
+  - name: clicks_le_impressions
+    sql: impressions IS NULL OR clicks IS NULL OR clicks <= impressions
+  dataset_rules: []
+
+materialization:
+  strategy: overwrite
+  format: delta
+
+links:
+- name: mkt_google
+  type: table
+  path: table:{catalog}.marketing.silver_google_ads_campaigns
+- name: silver_meta_ads_campaigns
+  type: table
+  path: table:{catalog}.marketing.silver_meta_ads_campaigns
+- name: silver_hubspot_email_campaigns
+  type: table
+  path: table:{catalog}.marketing.silver_hubspot_email_campaigns

@@ -114,7 +114,7 @@ zone.
 Copy the template and fill it in (the file is gitignored):
 
 ```bash
-cp deploy/.env.example deploy/.env
+cp platform/snowflake/deploy/.env.example platform/snowflake/deploy/.env
 ```
 
 ```ini
@@ -184,14 +184,14 @@ password blank).
 ## Deploy & run the pipelines
 
 Two ways to run the mesh — **pick one**. Both use the same contracts and the same
-`runtime/` code; they differ only in *where* the medallion runs.
+`platform/snowflake/runtime/` code; they differ only in *where* the medallion runs.
 
 | | Path A — local client | Path B — native Snowflake Project |
 |---|---|---|
 | Where it runs | your machine drives Snowflake SQL | inside Snowflake (Notebooks + Task DAG) |
 | Needs | Python + `.env` | a compute pool (public repo — no GitHub credentials) |
 | Best for | fastest way to see it work | scheduled, in-Snowsight, self-serve from GitHub |
-| Command | `python deploy/deploy.py` | run `sql/bootstrap.sql`, then `EXECUTE TASK … T_RIDEFLOW_MESH` |
+| Command | `python platform/snowflake/deploy/deploy.py` | run `platform/snowflake/sql/bootstrap.sql`, then `EXECUTE TASK … T_RIDEFLOW_MESH` |
 
 ### Path A — local client (fastest)
 
@@ -201,16 +201,16 @@ SQL in Snowflake. No compute pool, no Git, no notebooks.
 ```bash
 # Full mesh — all 11 systems across 6 domains, in FK order
 # (creates DB/WH/schemas, generates + loads landing, runs Bronze→Silver→Gold everywhere)
-python deploy/deploy.py
+python platform/snowflake/deploy/deploy.py
 
 # Just one system, end-to-end
-python deploy/deploy.py --domain payments/stripe
+python platform/snowflake/deploy/deploy.py --domain payments/stripe
 
 # Provision only (schemas, no data)
-python deploy/deploy.py --setup-only
+python platform/snowflake/deploy/deploy.py --setup-only
 
 # Land via the stage "volume" (PUT + COPY INTO, y_/m_/d_/h_ partitions) instead of direct load
-python deploy/deploy.py --domain marketplace/rideflow --via-stage
+python platform/snowflake/deploy/deploy.py --domain marketplace/rideflow --via-stage
 ```
 
 ### Path B — native Snowflake Project (in-Snowflake, scheduled)
@@ -239,26 +239,27 @@ SHOW TABLES IN SCHEMA QUARANTINE;                              -- rejected rows 
 ## Repository layout
 
 ```text
-domains_rideflow/          Domain-owned contract trees (portable, engine-agnostic)
+contracts/                 Domain-owned contract trees (portable, engine-agnostic)
   <domain>/<system>/contracts/{bronze,silver,gold}/
-runtime/                   Shared LakeLogic-on-Snowflake runtime (used by deploy AND notebooks)
-  medallion.py             run_layer(): run + persist one medallion layer on a connection
-  landing.py               generate + load LANDING (direct, or PUT+COPY INTO a stage volume)
-  testdata.py              Per-domain data generators (conn-aware, cross-domain FK-consistent)
-notebooks/pipeline_driver.ipynb  One parameterized driver (domain/system/layer via key=value params)
-tasks/tasks.sql            Full-mesh Task DAG snapshot — max parallelism (natural FK DAG); deploy generates per --mesh-max-parallel
-wheelhouse/                LakeLogic (fixed) + pure-python dep wheels (trial-safe notebook install)
-sql/bootstrap.sql          One-time: create DB/WH/Git repo (public, no creds), then run setup.sql from git
-sql/setup.sql              Flesh out the whole project from the repo (compute pool, wheels, notebooks, tasks)
-deploy/deploy.py           Local client: provision + landing + run medallion (fastest path)
-deploy/deploy_project.py   Deploy the native Snowflake Project from Python (Git + Notebooks + Tasks)
-deploy/.env.example        Connection + Project template
+platform/snowflake/
+  runtime/                 Shared LakeLogic-on-Snowflake runtime (used by deploy AND notebooks)
+    medallion.py           run_layer(): run + persist one medallion layer on a connection
+    landing.py             generate + load LANDING (direct, or PUT+COPY INTO a stage volume)
+    testdata.py            Per-domain data generators (conn-aware, cross-domain FK-consistent)
+  notebooks/pipeline_driver.ipynb  One parameterized driver (domain/system/layer via key=value params)
+  tasks/tasks.sql          Full-mesh Task DAG snapshot — max parallelism (natural FK DAG); deploy generates per --mesh-max-parallel
+  wheelhouse/              LakeLogic (fixed) + pure-python dep wheels (trial-safe notebook install)
+  sql/bootstrap.sql        One-time: create DB/WH/Git repo (public, no creds), then run setup.sql from git
+  sql/setup.sql            Flesh out the whole project from the repo (compute pool, wheels, notebooks, tasks)
+  deploy/deploy.py         Local client: provision + landing + run medallion (fastest path)
+  deploy/deploy_project.py Deploy the native Snowflake Project from Python (Git + Notebooks + Tasks)
+  deploy/.env.example      Connection + Project template
 docs/iceberg-roadmap.md    Making it an open lakehouse (Iceberg via Horizon; native vs external)
 docs/external-storage-setup.md  External stage/table on AWS S3 / Azure / GCP (files as the source)
 ```
 
-`domains_rideflow/` is shared verbatim with the LakeLogic Databricks and Fabric
-reference repos — the contracts are portable. Only the deploy/runtime layer differs
+`contracts/` is shared verbatim with the LakeLogic Databricks and Fabric
+reference repos — the contracts are portable. Only the deploy and runtime layer differs
 per platform.
 
 ## Native Snowflake Project (Notebooks + Contracts + Tasks)
@@ -268,7 +269,7 @@ Beyond the local client, the whole medallion can run **inside Snowflake** as a
 
 | Component | Where it shows up |
 | --- | --- |
-| Contracts (`domains_rideflow/`) + notebooks + tasks | **Projects → Workspaces** (the Git repo) |
+| Contracts (`contracts/`) + notebooks + tasks | **Projects → Workspaces** (the Git repo) |
 | LakeLogic driver notebook | **Projects → Notebooks** — one `NB_PIPELINE`, parameterized by layer |
 | Orchestration + run history | **Monitoring → Task History / Task Graph** |
 | Data products / quarantine | **Databases →** `RIDEFLOW_DEV_DEMO` schemas |
@@ -291,7 +292,7 @@ was purely a pool-sizing issue. **Validated on the trial: the whole 11-system me
 in ~9 minutes.** Foreign keys stay consistent (a downstream system reads real upstream ids).
 
 Concurrency is a knob — `deploy_project.py --mesh-max-parallel N`: **`0` (default) = max**,
-`2` = FK-ordered waves of 2 (tighter node footprint, ~65 min), `1` = fully sequential. The notebooks run the **same `runtime/` code the local deploy uses**,
+`2` = FK-ordered waves of 2 (tighter node footprint, ~65 min), `1` = fully sequential. The notebooks run the **same `platform/snowflake/runtime/` code the local deploy uses**,
 on the notebook's own Snowpark session
 (`SnowflakeAdapter.set_shared_connection(session.connection)`) — no password in the
 notebook — so the whole mesh runs **inside Snowflake** with native run history.
@@ -300,11 +301,11 @@ notebook — so the whole mesh runs **inside Snowflake** with native run history
 
 Snowflake reads the repo directly and fleshes out everything. In a Snowsight worksheet:
 
-1. Open **`sql/bootstrap.sql`** and run it — **no GitHub credentials required** (Snowflake
+1. Open **`platform/snowflake/sql/bootstrap.sql`** and run it — **no GitHub credentials required** (Snowflake
    clones this public repo anonymously). It creates the database, warehouse and `GIT REPOSITORY`,
    then calls:
    ```sql
-   EXECUTE IMMEDIATE FROM @RIDEFLOW_DEV_DEMO.PIPELINE.RIDEFLOW_REPO/branches/main/sql/setup.sql;
+   EXECUTE IMMEDIATE FROM @RIDEFLOW_DEV_DEMO.PIPELINE.RIDEFLOW_REPO/branches/main/platform/snowflake/sql/setup.sql;
    ```
 2. `setup.sql` (run from the repo) creates the schemas, compute pool, **stages the
    LakeLogic wheelhouse**, creates the `NB_PIPELINE` Notebook + the full-mesh Task DAG,
@@ -313,13 +314,13 @@ Snowflake reads the repo directly and fleshes out everything. In a Snowsight wor
 
 Forked the repo **privately**? Add a credential secret and reference it from the API
 integration + Git repository — see the commented "private fork" block at the bottom of
-`sql/bootstrap.sql`.
+`platform/snowflake/sql/bootstrap.sql`.
 
-**Or from Python** (same result, parameterized via `deploy/.env`):
+**Or from Python** (same result, parameterized via `platform/snowflake/deploy/.env`):
 ```bash
-# public repo — no GitHub credentials needed; the Snowflake connection comes from deploy/.env.
+# public repo — no GitHub credentials needed; the Snowflake connection comes from platform/snowflake/deploy/.env.
 # (Only a PRIVATE fork needs GITHUB_USER + GITHUB_PAT; defaults to the public repo otherwise.)
-python deploy/deploy_project.py --run
+python platform/snowflake/deploy/deploy_project.py --run
 ```
 
 ### Run the pipelines (once the Project is deployed)
@@ -345,7 +346,7 @@ notebook runs:
 
 - **Headless (Task DAG / `EXECUTE NOTEBOOK`)** — Snowflake's internal PyPI mirror is **not**
   available in headless runs, so notebooks install from a **wheelhouse staged in Snowflake**
-  (`@PIPELINE.WHEELS`, populated from `wheelhouse/`) with `pip --no-index`. This is the path
+  (`@PIPELINE.WHEELS`, populated from `platform/snowflake/wheelhouse/`) with `pip --no-index`. This is the path
   the Task DAG uses. The container runtime already ships pandas/pydantic/pyyaml/snowflake-
   connector, so only `lakelogic` + `loguru` + `sqlglot` are staged.
 - **Interactive (you click Run in the notebook)** — the internal PyPI mirror *is* available,
@@ -353,8 +354,8 @@ notebook runs:
   External Access Integrations, but the internal mirror is a separate, always-available proxy.
 
 > Container-runtime Notebooks need compute pools (available on the trial). The local
-> `deploy/deploy.py` path needs neither compute pools nor staged wheels — it runs the same
-> `runtime/` code from your machine.
+> `platform/snowflake/deploy/deploy.py` path needs neither compute pools nor staged wheels — it runs the same
+> `platform/snowflake/runtime/` code from your machine.
 
 ### How LANDING would be fed in production
 
@@ -370,12 +371,12 @@ tables the Bronze contracts read.
   **`lakelogic>=1.41.0`**. The driver notebook's install cell already **prefers PyPI**
   (`pip install lakelogic>=1.41.0`) and only **falls back to the staged wheelhouse** when
   PyPI isn't reachable — which today is the case for **headless Task runs** (they can't reach
-  Snowflake's internal PyPI mirror), so the wheelhouse (`wheelhouse/`, staged to
+  Snowflake's internal PyPI mirror), so the wheelhouse (`platform/snowflake/wheelhouse/`, staged to
   `@PIPELINE.WHEELS`) is still required for the DAG. Interactive notebook runs already use
   PyPI. **To drop the wheelhouse entirely once PyPI is reachable everywhere for you**
   (e.g. a paid account with external access, or the mirror in headless runs): delete the
   `else` fallback in the driver's install cell and the wheelhouse staging in
-  `deploy/deploy_project.py` + `sql/setup.sql`, then remove `wheelhouse/`.
+  `platform/snowflake/deploy/deploy_project.py` + `platform/snowflake/sql/setup.sql`, then remove `platform/snowflake/wheelhouse/`.
 - **Document/PDF extraction is out of scope** on the Snowflake SQL engine: the
   `operations/checkr` `driver_licences` contracts (which read PDF files via a glob source)
   were removed. `background_checks` — checkr's real product — runs fine. On Databricks/Fabric

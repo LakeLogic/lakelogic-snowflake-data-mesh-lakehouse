@@ -1,0 +1,64 @@
+version: 1.0.0
+
+info:
+  title: "Bronze \u2014 Checkr Background Checks"
+  table_name: '{bronze_layer}_{system}_background_checks'
+  description: 'Raw driver background check results from Checkr.
+
+    '
+  target_layer: bronze
+  domain: operations
+  system: checkr
+
+model:
+  fields:
+  - name: REPORT_ID
+    type: string
+    description: Checkr report ID
+  - name: DRIVER_ID
+    type: string
+    pii: true
+    description: FK to marketplace driver
+    foreign_key:
+      contract: '{bronze_layer}_rideflow_driver_profiles'
+      column: DRIVER_ID
+  - name: FULL_NAME
+    type: string
+    pii: true
+    description: Driver full legal name
+  - name: DATE_OF_BIRTH
+    type: string
+    pii: true
+    description: Driver date of birth
+  - name: SSN_LAST_FOUR
+    type: string
+    pii: true
+    description: Last 4 of SSN
+  - name: LICENCE_NUMBER
+    type: string
+    pii: true
+    description: Driver licence number
+  - name: ADDRESS
+    type: string
+    pii: true
+    description: Driver address
+  - name: STATUS
+    type: string
+    description: clear, consider, suspended, dispute
+  - name: RESULT
+    type: string
+    description: Overall result
+  - name: COMPLETED_AT
+    type: string
+    description: Check completion timestamp
+  - name: CREATED_AT
+    type: string
+    description: Check initiation timestamp
+  - name: ADJUDICATION
+    type: string
+    description: Manual review result
+
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_background_checks
+  load_mode: full
