@@ -1,0 +1,79 @@
+version: 1.0.0
+
+info:
+  title: "Silver \u2014 Rideflow Rider App Events"
+  table_name: '{silver_layer}_rideflow_rider_app_events'
+  description: "Cleaned, typed, deduplicated rider mobile-app interaction stream.\
+    \ Used by funnel + engagement marts (e.g. open \u2192 request \u2192 completed).\
+    \ device_id and ip_address are masked at Silver; rider_id is hashed to preserve\
+    \ cross-table join key while protecting PII.\n"
+  target_layer: silver
+  domain: marketplace
+  system: rideflow
+
+primary_key:
+- EVENT_ID
+
+model:
+  fields:
+  - name: EVENT_ID
+    type: string
+    required: true
+  - name: RIDER_ID
+    type: string
+    required: true
+    pii: true
+    masking: hash
+    foreign_key:
+      contract: '{silver_layer}_rideflow_rider_profiles'
+      column: RIDER_ID
+  - name: DEVICE_ID
+    type: string
+    pii: true
+    masking: hash
+  - name: IP_ADDRESS
+    type: string
+    pii: true
+    masking: redact
+  - name: EVENT_NAME
+    type: string
+    required: true
+    description: Event type (screen_view | button_tap | search | ...)
+  - name: SCREEN_NAME
+    type: string
+  - name: EVENT_TIMESTAMP
+    type: timestamp
+    required: true
+  - name: APP_VERSION
+    type: string
+  - name: PLATFORM
+    type: string
+    description: ios | android
+  - name: CITY_CODE
+    type: string
+  - name: EVENT_PROPERTIES_JSON
+    type: string
+    description: Raw event properties as JSON string.
+
+quality:
+  row_rules:
+  - name: event_id_not_null
+    sql: event_id IS NOT NULL
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+  - name: valid_platform
+    sql: platform IS NULL OR platform IN ('ios','android')
+  dataset_rules:
+  - unique: EVENT_ID
+
+transformations:
+- deduplicate:
+    by:
+    - EVENT_ID
+    sort_by:
+    - EVENT_ID
+
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_rider_app_events
+  load_mode: full

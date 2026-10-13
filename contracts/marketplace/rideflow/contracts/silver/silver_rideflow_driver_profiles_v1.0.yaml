@@ -1,0 +1,81 @@
+version: 1.0.0
+
+info:
+  title: "Silver \u2014 Rideflow Driver Profiles"
+  table_name: '{silver_layer}_rideflow_driver_profiles'
+  description: Cleaned, typed, and deduplicated data.
+  target_layer: silver
+  domain: marketplace
+  system: rideflow
+
+primary_key:
+- DRIVER_ID
+
+model:
+  fields:
+  - name: DRIVER_ID
+    type: string
+    required: true
+  - name: NAME
+    type: string
+    pii: true
+    masking: redact
+  - name: EMAIL
+    type: string
+    pii: true
+    masking: hash
+  - name: PHONE
+    type: string
+    pii: true
+    masking: hash
+  - name: DATE_OF_BIRTH
+    type: string
+    pii: true
+    masking: hash
+  - name: HOME_ADDRESS
+    type: string
+    pii: true
+    masking: redact
+  - name: LICENCE_NUMBER
+    type: string
+    pii: true
+    masking: hash
+  - name: LICENCE_PLATE
+    type: string
+    pii: true
+    masking: hash
+  - name: VEHICLE_TYPE
+    type: string
+  - name: BANK_ACCOUNT_LAST_FOUR
+    type: string
+    pii: true
+    masking: hash
+  - name: CITY_CODE
+    type: string
+  - name: SIGNUP_DATE
+    type: date
+  - name: STATUS
+    type: string
+  - name: RATING
+    type: float
+  - name: UPDATED_AT
+    type: timestamp
+
+quality:
+  row_rules:
+  - name: valid_licence_number
+    sql: licence_number IS NOT NULL
+  - name: valid_email
+    sql: email like '%@%'
+
+transformations:
+- deduplicate:
+    on:
+    - driver_id
+    sort_by: [updated_at]
+    order: desc
+
+source:
+  type: table
+  path: table:{domain_catalog}.bronze_rideflow_driver_profiles
+  load_mode: full

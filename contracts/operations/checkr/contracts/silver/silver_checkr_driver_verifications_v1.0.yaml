@@ -1,0 +1,71 @@
+version: 1.0.0
+
+info:
+  title: "Silver \u2014 Checkr Driver Verifications"
+  table_name: '{silver_layer}_checkr_driver_verifications'
+  description: Cleaned, typed, deduplicated background-check results expressed as
+    driver verifications.
+  target_layer: silver
+  domain: operations
+  system: checkr
+
+model:
+  fields:
+  - name: REPORT_ID
+    type: string
+    required: true
+  - name: DRIVER_ID
+    type: string
+    required: true
+    pii: true
+    masking: hash
+  - name: FULL_NAME
+    type: string
+    pii: true
+    masking: redact
+  - name: DATE_OF_BIRTH
+    type: string
+    pii: true
+    masking: hash
+  - name: SSN_LAST_FOUR
+    type: string
+    pii: true
+    masking: hash
+  - name: LICENCE_NUMBER
+    type: string
+    pii: true
+    masking: hash
+  - name: ADDRESS
+    type: string
+    pii: true
+    masking: redact
+  - name: STATUS
+    type: string
+  - name: RESULT
+    type: string
+  - name: COMPLETED_AT
+    type: timestamp
+  - name: CREATED_AT
+    type: timestamp
+  - name: ADJUDICATION
+    type: string
+
+primary_key:
+- REPORT_ID
+
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: REPORT_ID
+
+transformations:
+- deduplicate:
+    by:
+    - REPORT_ID
+    sort_by:
+    - REPORT_ID
+
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_background_checks
+  load_mode: full

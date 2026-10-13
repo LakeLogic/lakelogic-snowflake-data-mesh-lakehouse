@@ -1,0 +1,36 @@
+version: 1.0.0
+
+info:
+  title: "Bronze \u2014 Internal FX Rates Daily"
+  table_name: '{bronze_layer}_{system}_fx_rates_daily'
+  description: "Daily foreign-exchange rates pulled from the ECB reference rates API.\
+    \ Used downstream by fact_revenue_daily to normalize multi-currency transactions\
+    \ to USD. One row per (currency \xD7 date).\n"
+  target_layer: bronze
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: RATE_DATE
+    type: string
+    description: ISO date (YYYY-MM-DD)
+  - name: BASE_CURRENCY
+    type: string
+    description: Base currency (typically EUR for ECB feed)
+  - name: QUOTE_CURRENCY
+    type: string
+    description: ISO 4217 quote currency code
+  - name: RATE
+    type: float
+    description: Mid-market rate, base per quote
+  - name: SOURCE_FEED
+    type: string
+    description: Provider identifier (e.g. ecbreference)
+  - name: _LAKELOGIC_PROCESSED_AT
+    type: timestamp
+
+source:
+  type: table
+  path: table:{catalog}.LANDING.{system}_fx_rates_daily
+  load_mode: full

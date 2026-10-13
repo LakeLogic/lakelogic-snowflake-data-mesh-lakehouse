@@ -1,0 +1,167 @@
+# ── Reference Data System Registry ───────────────────────────────────────────
+# Static reference data: cities, vehicle types, surge tiers, cancellation reasons.
+# Also includes Python-generated dimensions (dim_date).
+domain: reference
+
+system: internal
+
+metadata:
+  run_log_table: "{domain_catalog}._pipeline_run_log"
+  run_log_backend: "snowflake"
+  snowflake_database: "{catalog}"
+  snowflake_schema: "{domain}"
+
+storage:
+  domain_catalog: "{catalog}.reference"
+  quarantine_root: "{catalog}.QUARANTINE"
+  contract_root: "/Workspace/Shared/data_platform/contracts/{domain}/{system}"
+  # UC-mode operational paths (were missing → {landing_root} stayed a literal
+  # 'dbfs:/{landing_root}/...' and every bronze read failed PATH_NOT_FOUND).
+  landing_root: "/Volumes/{catalog}/nondelta/landing_{domain}/{system}"
+  log_root: "/Volumes/{catalog}/nondelta/_logs"
+
+contracts:
+  # ── Bronze: raw external feeds ────────────────────────────────────────────
+  - layer: bronze
+    entity: city_master
+    path: "contracts/{bronze_layer}/{bronze_layer}_{system}_city_master_v1.0.yaml"
+    enabled: true
+  - layer: bronze
+    entity: fx_rates_daily
+    path: "contracts/{bronze_layer}/{bronze_layer}_{system}_fx_rates_daily_v1.0.yaml"
+    enabled: true
+
+  # ── Silver: cleaned + typed ───────────────────────────────────────────────
+  - layer: silver
+    entity: silver_internal_cities
+    path: "contracts/{silver_layer}/silver_internal_cities_v1.0.yaml"
+    depends_on: ['bronze_internal_city_master']
+    enabled: true
+  - layer: silver
+    entity: silver_internal_fx_rates_daily
+    path: "contracts/{silver_layer}/silver_internal_fx_rates_daily_v1.0.yaml"
+    depends_on: ['bronze_internal_fx_rates_daily']
+    enabled: true
+
+  # ── Gold: dim_ (SCD2 capable) and fact_ ───────────────────────────────────
+  - layer: gold
+    entity: gold_internal_dim_date
+    path: "contracts/{gold_layer}/gold_internal_dim_date_v1.0.yaml"
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_country
+    path: "contracts/{gold_layer}/gold_internal_dim_country_v1.0.yaml"
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_currency
+    path: "contracts/{gold_layer}/gold_internal_dim_currency_v1.0.yaml"
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_city
+    path: "contracts/{gold_layer}/gold_internal_dim_city_v1.0.yaml"
+    depends_on: ['silver_internal_cities']
+    enabled: true
+  - layer: gold
+    entity: gold_internal_fact_fx_rate_daily
+    path: "contracts/{gold_layer}/gold_internal_fact_fx_rate_daily_v1.0.yaml"
+    depends_on: ['silver_internal_fx_rates_daily']
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_vehicle_type
+    path: "contracts/{gold_layer}/gold_internal_dim_vehicle_type_v1.0.yaml"
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_payment_method
+    path: "contracts/{gold_layer}/gold_internal_dim_payment_method_v1.0.yaml"
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_surge_tier
+    path: "contracts/{gold_layer}/gold_internal_dim_surge_tier_v1.0.yaml"
+    enabled: true
+  - layer: gold
+    entity: gold_internal_dim_cancellation_reason
+    path: "contracts/{gold_layer}/gold_internal_dim_cancellation_reason_v1.0.yaml"
+    enabled: true
+
+lineage:
+  enabled: true
+
+materialization:
+  # bronze/silver were unset → defaulted to parquet, which UC managed tables
+  # reject ("Only Delta is supported for managed tables"). Pin them to delta.
+  bronze:
+    strategy: append
+    format: delta
+  silver:
+    # reference/lookup tables are full snapshots — overwrite, not merge
+    # (merge would require a primary_key on every lookup contract)
+    strategy: overwrite
+    format: delta
+  gold:
+    strategy: overwrite
+    format: delta
+
+server:
+  bronze:
+    cast_to_string: true
+    schema_policy:
+      evolution: append
+      unknown_fields: allow
+  silver:
+    schema_policy:
+      # append (not strict): reference lookups declare derived columns (e.g.
+      # cities.is_active) not present in the raw feed — strict would quarantine
+      # every row for the "missing" field. The quarantine demo lives in
+      # marketplace, not in clean reference data.
+      evolution: append
+      unknown_fields: quarantine
+  gold:
+    schema_policy:
+      evolution: append
+      unknown_fields: drop
+
+notifications_enabled: false
+
+x-azure-storage: &azure_storage
+  storage_root: "abfss://nondelta@{storage_account}.dfs.core.windows.net"
+  data_root: "abfss://reference@{storage_account}.dfs.core.windows.net"
+  quarantine_root: "abfss://quarantine@{storage_account}.dfs.core.windows.net"
+
+environments:
+  dev:
+    catalog: "${SNOWFLAKE_DATABASE}"
+    storage_account: "${RIDEFLOW_DEV_STORAGE_ACCOUNT}"
+    <<: *azure_storage
+  staging:
+    catalog: "rideflow_demo_staging"
+    storage_account: "${RIDEFLOW_STG_STORAGE_ACCOUNT}"
+    <<: *azure_storage
+  prod:
+    catalog: "rideflow_demo_prod"
+    storage_account: "${RIDEFLOW_PROD_STORAGE_ACCOUNT}"
+    <<: *azure_storage
+  local:
+    catalog: "local"
+    storage_root: "./lakehouse"
+    data_root: "./lakehouse/reference"
+    quarantine_root: "./lakehouse/_quarantine"
+  local_polars:
+    catalog: "local"
+    storage_root: "./lakehouse_polars"
+    data_root: "./lakehouse_polars/reference"
+    quarantine_root: "./lakehouse_polars/_quarantine"
+  local_spark:
+    catalog: "local"
+    storage_root: "./lakehouse_spark"
+    data_root: "./lakehouse_spark/{domain}"
+    quarantine_root: "./lakehouse_spark/_quarantine"
+  local_duckdb:
+    catalog: "local"
+    storage_root: "./lakehouse_duckdb"
+    data_root: "./lakehouse_duckdb/{domain}"
+    quarantine_root: "./lakehouse_duckdb/_quarantine"
+  colab:
+    catalog: "colab"
+    storage_root: "/content/lake"
+    data_root: "/content/lake/reference"
+    quarantine_root: "/content/lake/_quarantine"

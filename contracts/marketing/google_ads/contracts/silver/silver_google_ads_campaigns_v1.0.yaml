@@ -1,0 +1,61 @@
+version: 1.0.0
+
+info:
+  title: "Silver \u2014 Google Ads Campaigns"
+  table_name: '{silver_layer}_google_ads_campaigns'
+  description: Cleaned, typed, and deduplicated data.
+  target_layer: silver
+  domain: marketing
+  system: google_ads
+
+model:
+  fields:
+  - name: CAMPAIGN_ID
+    type: string
+    required: true
+  - name: CAMPAIGN_NAME
+    type: string
+    required: true
+  - name: AD_GROUP_ID
+    type: string
+  - name: AD_GROUP_NAME
+    type: string
+  - name: DATE
+    type: string
+  - name: IMPRESSIONS
+    type: integer
+  - name: CLICKS
+    type: integer
+  - name: COST
+    type: float
+  - name: CONVERSIONS
+    type: integer
+  - name: CONVERSION_VALUE
+    type: string
+  - name: CURRENCY
+    type: string
+
+primary_key:
+- CAMPAIGN_ID
+- AD_GROUP_ID
+- DATE
+
+quality:
+  row_rules: []
+  dataset_rules: []
+
+transformations:
+- deduplicate:
+    by:
+    - CAMPAIGN_ID
+    - AD_GROUP_ID
+    - DATE
+    sort_by:
+    - CAMPAIGN_ID
+    - AD_GROUP_ID
+    - DATE
+
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_campaigns
+  load_mode: full

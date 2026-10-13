@@ -1,0 +1,76 @@
+version: 1.0.0
+
+info:
+  title: "Silver \u2014 Rideflow Trip Requests"
+  table_name: '{silver_layer}_rideflow_trip_requests'
+  description: "Cleaned, typed, deduplicated trip request events. Each row is a requested\
+    \ ride/delivery BEFORE assignment. Downstream marts join this with `silver_rideflow_trips`\
+    \ to compute request \u2192 completion conversion and dispatch latency KPIs.\n"
+  target_layer: silver
+  domain: marketplace
+  system: rideflow
+
+primary_key:
+- REQUEST_ID
+
+model:
+  fields:
+  - name: REQUEST_ID
+    type: string
+    required: true
+  - name: RIDER_ID
+    type: string
+    required: true
+    pii: true
+    masking: hash
+    foreign_key:
+      contract: '{silver_layer}_rideflow_rider_profiles'
+      column: RIDER_ID
+  - name: TRIP_TYPE
+    type: string
+    description: ride | eats_delivery
+  - name: PICKUP_LAT
+    type: float
+  - name: PICKUP_LNG
+    type: float
+  - name: DROPOFF_LAT
+    type: float
+  - name: DROPOFF_LNG
+    type: float
+  - name: CITY_CODE
+    type: string
+  - name: REQUESTED_AT
+    type: timestamp
+    required: true
+  - name: ESTIMATED_FARE
+    type: float
+  - name: ESTIMATED_ETA_MINUTES
+    type: integer
+  - name: SURGE_MULTIPLIER
+    type: float
+
+quality:
+  row_rules:
+  - name: request_id_not_null
+    sql: request_id IS NOT NULL
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+  - name: valid_trip_type
+    sql: trip_type IS NULL OR trip_type IN ('ride','eats_delivery')
+  - name: surge_in_range
+    sql: surge_multiplier IS NULL OR (surge_multiplier >= 1.0 AND surge_multiplier
+      <= 10.0)
+  dataset_rules:
+  - unique: REQUEST_ID
+
+transformations:
+- deduplicate:
+    by:
+    - REQUEST_ID
+    sort_by:
+    - REQUEST_ID
+
+source:
+  type: table
+  path: table:{domain_catalog}.{bronze_layer}_{system}_trip_requests
+  load_mode: full

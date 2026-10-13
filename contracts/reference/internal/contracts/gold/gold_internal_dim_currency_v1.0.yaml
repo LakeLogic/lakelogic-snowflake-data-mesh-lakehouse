@@ -1,0 +1,45 @@
+version: 1.0.0
+
+info:
+  title: "Gold \u2014 Dim Currency"
+  table_name: '{gold_layer}_internal_dim_currency'
+  description: 'ISO 4217 currency dimension with symbol, decimal places and country
+    associations. Joined by fact_revenue_daily and fact_fx_rate_daily.
+
+    '
+  target_layer: gold
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: CURRENCY_CODE
+    type: string
+    required: true
+    description: ISO 4217 alpha code (e.g. USD, EUR, GBP, INR)
+  - name: CURRENCY_NUMERIC
+    type: int
+  - name: CURRENCY_NAME
+    type: string
+  - name: SYMBOL
+    type: string
+  - name: MINOR_UNITS
+    type: int
+    description: Decimal places used (e.g. 2 for USD, 0 for JPY)
+
+quality:
+  row_rules: []
+  dataset_rules:
+  - unique: CURRENCY_CODE
+
+primary_key:
+- CURRENCY_CODE
+
+source:
+  type: table
+  path: table:{catalog}.LANDING.internal_dim_currency_seed
+  format: csv
+  options:
+    header: 'true'
+  load_mode: full
+  watermark_strategy: none
