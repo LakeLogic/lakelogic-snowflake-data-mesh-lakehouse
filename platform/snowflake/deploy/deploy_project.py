@@ -111,11 +111,13 @@ def main():
                      f"(set: {', '.join(envs) or 'none'}). Set it in LakeLogic Deliver.")
         project = envs[args.env]
     names = {
-        "DB": os.getenv("SNOWFLAKE_DATABASE", project["database"]),
-        "WH": os.getenv("SNOWFLAKE_WAREHOUSE", project["warehouse"]),
-        "POOL": os.getenv("SNOWFLAKE_COMPUTE_POOL", project["compute_pool"]),
+        "DB": (os.getenv("SNOWFLAKE_DATABASE") or "").strip() or project["database"],
+        "WH": (os.getenv("SNOWFLAKE_WAREHOUSE") or "").strip() or project["warehouse"],
+        "POOL": (os.getenv("SNOWFLAKE_COMPUTE_POOL") or "").strip() or project["compute_pool"],
         "REPO": project["git_repository"],
-        "BRANCH": args.branch,
+        # A branch with `/` in its name (`feat/x`) must be double-quoted in a repository path:
+        # `/branches/"feat/x"/...`. Unquoted, Snowflake reads `feat` as the branch (2026-11-01).
+        "BRANCH": f'"{args.branch}"' if "/" in args.branch else args.branch,
     }
     integration = project["git_api_integration"]
     repo_url = os.getenv("GITHUB_REPO_URL", "").strip()
@@ -127,6 +129,10 @@ def main():
 
     conn = connect()
     cur = conn.cursor()
+    # The warehouse the notebooks and tasks run on. bootstrap.sql created it by hand once, so a
+    # deploy to a fresh account failed creating the first notebook (2026-11-01).
+    run(cur, f"CREATE WAREHOUSE IF NOT EXISTS {names['WH']} WAREHOUSE_SIZE = XSMALL "
+             "AUTO_SUSPEND = 60 AUTO_RESUME = TRUE INITIALLY_SUSPENDED = TRUE")
     run(cur, f"CREATE DATABASE IF NOT EXISTS {db}")
     run(cur, f"USE DATABASE {db}")
     run(cur, 'CREATE SCHEMA IF NOT EXISTS "pipeline"')
