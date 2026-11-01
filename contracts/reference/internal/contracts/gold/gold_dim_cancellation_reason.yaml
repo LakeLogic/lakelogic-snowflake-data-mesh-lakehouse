@@ -39,7 +39,7 @@ model:
     description: The party responsible for the cancellation (for example the customer,
       driver or platform), used to attribute and analyse cancellations.
   - name: charge_cancellation_fee
-    type: decimal(18,2)
+    type: boolean
     required: false
     description: Whether a cancellation fee applies for this reason, which drives
       billing and customer communication.
