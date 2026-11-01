@@ -1,0 +1,196 @@
+version: 1.0.0
+
+info:
+  title: Silver — Rideflow Trip Requests
+  target_layer: silver
+  description: Each record captures a single ride request placed by a rider, identified
+    by a unique request reference and linked to the customer who made it, along with
+    the service category requested and the city where it took place. It holds sensitive
+    pickup and dropoff coordinates as well as the request timestamp, estimated fare,
+    estimated driver arrival time, and the surge multiplier applied under high demand.
+  table_name: '{silver_layer}_rideflow_trip_requests'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: request_id
+    type: string
+    required: true
+    description: Unique identifier for each ride request made by a rider. Used to
+      track and reference individual trips.
+  - name: rider_id
+    type: string
+    required: true
+    description: Identifier for the rider who requested the trip. Links the request
+      to a specific customer for history and personalization.
+  - name: trip_type
+    type: string
+    required: false
+    description: Category of the ride requested, such as standard, premium, or shared.
+      Helps understand demand patterns and service mix.
+  - name: pickup_lat
+    type: float
+    required: true
+    pii: true
+    classification: gps_coordinate
+    description: Latitude coordinate of where the rider was picked up. Sensitive location
+      data used for routing and trip analysis.
+    min: -90.0
+    max: 90.0
+  - name: pickup_lng
+    type: float
+    required: true
+    pii: true
+    classification: gps_coordinate
+    description: Longitude coordinate of where the rider was picked up. Sensitive
+      location data used for routing and trip analysis.
+    min: -180.0
+    max: 180.0
+  - name: dropoff_lat
+    type: float
+    required: true
+    pii: true
+    classification: gps_coordinate
+    description: Latitude coordinate of the trip's destination. Sensitive location
+      data used for routing and trip analysis.
+    min: -90.0
+    max: 90.0
+  - name: dropoff_lng
+    type: float
+    required: false
+    pii: true
+    classification: gps_coordinate
+    description: Longitude coordinate of the trip's destination. Sensitive location
+      data used for routing and trip analysis.
+  - name: city_code
+    type: string
+    required: false
+    description: Short code representing the city where the trip took place. Used
+      for regional reporting and market analysis.
+  - name: requested_at
+    type: timestamp
+    required: false
+    description: Date and time when the rider requested the trip. Important for demand
+      analysis and time-based reporting.
+  - name: estimated_fare
+    type: decimal(10,2)
+    required: false
+    description: Estimated cost of the trip at the time of request. Used for pricing
+      analysis and revenue forecasting.
+  - name: estimated_eta_minutes
+    type: integer
+    required: false
+    description: Estimated time in minutes until the driver arrives at pickup. Reflects
+      service speed and rider experience.
+  - name: surge_multiplier
+    type: float
+    required: false
+    description: Factor by which the fare was increased due to high demand. Indicates
+      pricing dynamics and market conditions.
+
+primary_key:
+- request_id
+
+quality:
+  row_rules:
+  - name: request_id_not_null
+    sql: request_id IS NOT NULL
+    category: completeness
+    description: request_id is always present (never null).
+  - name: pickup_lat_range_min
+    sql: pickup_lat IS NULL OR pickup_lat >= -90.0
+    category: validity
+    description: pickup_lat is at least -90.0 when present.
+  - name: pickup_lat_range_max
+    sql: pickup_lat IS NULL OR pickup_lat <= 90.0
+    category: validity
+    description: pickup_lat is at most 90.0 when present.
+  - name: pickup_lng_range_min
+    sql: pickup_lng IS NULL OR pickup_lng >= -180.0
+    category: validity
+    description: pickup_lng is at least -180.0 when present.
+  - name: pickup_lng_range_max
+    sql: pickup_lng IS NULL OR pickup_lng <= 180.0
+    category: validity
+    description: pickup_lng is at most 180.0 when present.
+  - name: dropoff_lat_range_min
+    sql: dropoff_lat IS NULL OR dropoff_lat >= -90.0
+    category: validity
+    description: dropoff_lat is at least -90.0 when present.
+  - name: dropoff_lat_range_max
+    sql: dropoff_lat IS NULL OR dropoff_lat <= 90.0
+    category: validity
+    description: dropoff_lat is at most 90.0 when present.
+  - name: dropoff_lng_range_min
+    sql: dropoff_lng IS NULL OR dropoff_lng >= -180.0
+    category: validity
+    description: dropoff_lng is at least -180.0 when present.
+  - name: dropoff_lng_range_max
+    sql: dropoff_lng IS NULL OR dropoff_lng <= 180.0
+    category: validity
+    description: dropoff_lng is at most 180.0 when present.
+  - name: dropoff_lat_not_null
+    sql: dropoff_lat IS NOT NULL
+    category: completeness
+    description: dropoff_lat is always present (never null).
+  - name: estimated_eta_minutes_range_min
+    sql: estimated_eta_minutes IS NULL OR estimated_eta_minutes >= 0
+    category: validity
+    description: estimated_eta_minutes is at least 0 when present.
+  - name: estimated_eta_minutes_range_max
+    sql: estimated_eta_minutes IS NULL OR estimated_eta_minutes <= 1440
+    category: validity
+    description: estimated_eta_minutes is at most 1440 when present.
+  - name: estimated_fare_range_min
+    sql: estimated_fare IS NULL OR estimated_fare >= 0
+    category: validity
+    description: estimated_fare is at least 0 when present.
+  - name: estimated_fare_range_max
+    sql: estimated_fare IS NULL OR estimated_fare <= 1000000
+    category: validity
+    description: estimated_fare is at most 1000000 when present.
+  - name: pickup_lat_not_null
+    sql: pickup_lat IS NOT NULL
+    category: completeness
+    description: pickup_lat is always present (never null).
+  - name: pickup_lng_not_null
+    sql: pickup_lng IS NOT NULL
+    category: completeness
+    description: pickup_lng is always present (never null).
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: surge_multiplier_range_min
+    sql: surge_multiplier IS NULL OR surge_multiplier >= 1
+    category: validity
+    description: surge_multiplier is at least 1 when present.
+  - name: surge_multiplier_range_max
+    sql: surge_multiplier IS NULL OR surge_multiplier <= 10
+    category: validity
+    description: surge_multiplier is at most 10 when present.
+  - name: trip_type_accepted_values
+    sql: trip_type IS NULL OR trip_type IN ('basic', 'enterprise', 'premium', 'pro',
+      'standard')
+    category: validity
+    description: 'trip_type is one of: basic, enterprise, premium, pro, standard when
+      present.'
+
+transformations:
+- deduplicate:
+    by:
+    - request_id
+    sort_by:
+    - requested_at
+    order: desc
+
+dataset: silver_rideflow_trip_requests
+
+source:
+  type: stream
+  path: table:{bronze_root}.{bronze_layer}_rideflow_trip_requests
+  options:
+    kind: delta
+    checkpoint: '{log_root}/_checkpoints/silver_rideflow_trip_requests'
+    trigger: available_now

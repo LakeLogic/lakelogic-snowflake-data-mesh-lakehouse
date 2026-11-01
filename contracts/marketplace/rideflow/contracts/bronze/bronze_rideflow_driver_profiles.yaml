@@ -1,0 +1,111 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Rideflow Driver Profiles
+  target_layer: bronze
+  description: Driver profiles for the marketplace, holding each driver's personal
+    and contact details, driving licence and vehicle registration, vehicle category,
+    home city, signup date and current account status, alongside their average customer
+    rating and the last four digits of their payout bank account. Records originate
+    from the Rideflow platform at signup and are updated as profiles change. Much
+    of the content is personal data, including name, email, phone, date of birth,
+    home address, licence number and registration plate.
+  table_name: '{bronze_layer}_rideflow_driver_profiles'
+  domain: marketplace
+  system: rideflow
+
+model:
+  fields:
+  - name: driver_id
+    type: string
+    description: Unique identifier for each driver on the marketplace platform. Used
+      to link driver profiles to their trips, payouts and support records.
+  - name: name
+    type: string
+    pii: true
+    classification: person_name
+    description: The driver's full name as provided at signup. Used for identification
+      and communication with the driver.
+  - name: email
+    type: string
+    pii: true
+    classification: email
+    description: The driver's contact email address. Used for account notices, trip
+      updates and platform communication.
+  - name: phone
+    type: string
+    pii: true
+    classification: phone
+    description: The driver's contact phone number. Used for trip coordination and
+      account verification.
+  - name: date_of_birth
+    type: string
+    pii: true
+    classification: date_of_birth
+    description: The driver's date of birth. Used to confirm the driver meets the
+      minimum age requirement to drive.
+  - name: home_address
+    type: string
+    pii: true
+    classification: postal_address
+    description: The driver's residential address. Used for onboarding checks and
+      official correspondence.
+  - name: licence_number
+    type: string
+    pii: true
+    classification: licence_id
+    description: The driver's driving licence number. Used to verify the driver is
+      legally permitted to drive.
+  - name: licence_plate
+    type: string
+    pii: true
+    classification: licence_plate
+    description: The registration plate of the vehicle the driver uses. Used to match
+      the driver to the correct vehicle on trips.
+  - name: vehicle_type
+    type: string
+    description: The category of vehicle the driver operates, such as car or motorbike.
+      Helps match drivers to the right ride requests.
+  - name: bank_account_last_four
+    type: string
+    sensitive: true
+    classification: financial_account
+    description: The last four digits of the driver's bank account. Used to confirm
+      payout details without exposing the full account number.
+  - name: city_code
+    type: string
+    description: Short code for the city where the driver operates. Used to group
+      drivers by market for reporting and operations.
+  - name: signup_date
+    type: string
+    description: The date the driver joined the platform. Used to track driver tenure
+      and onboarding trends.
+  - name: status
+    type: string
+    description: The driver's current account state, such as active or suspended.
+      Determines whether the driver can accept trips.
+  - name: rating
+    type: Float64
+    description: The driver's average customer rating. Used to monitor service quality
+      and driver performance.
+  - name: updated_at
+    type: string
+    description: The date and time the driver's profile was last changed. Used to
+      track how current the record is.
+
+source:
+  type: landing
+  path: '{landing_root}/driver_profiles'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- driver_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_rideflow_driver_profiles

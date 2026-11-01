@@ -1,0 +1,74 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Rideflow Trip Cancellations
+  target_layer: bronze
+  description: Records of cancelled ride-hailing trips, capturing who cancelled, the
+    coded reason, and the city where the trip was requested, along with identifiers
+    for the rider, the matched driver, and the original trip. Each record carries
+    the request and cancellation timestamps and any cancellation fee charged to the
+    cancelling party. The source is Rideflow's marketplace system, landing as raw
+    bronze data.
+  table_name: '{bronze_layer}_rideflow_trip_cancellations'
+  domain: marketplace
+  system: rideflow
+
+model:
+  fields:
+  - name: cancellation_id
+    type: string
+    description: Unique identifier for each trip cancellation record, used to trace
+      and reference individual cancellation events.
+  - name: trip_id
+    type: string
+    description: Identifier of the trip that was cancelled, linking the cancellation
+      back to the original ride request.
+  - name: rider_id
+    type: string
+    description: Identifier of the rider who requested the trip, used to understand
+      cancellation patterns by customer.
+  - name: driver_id
+    type: string
+    description: Identifier of the driver assigned to the trip at the time of cancellation,
+      if one had been matched.
+  - name: cancelled_by
+    type: string
+    description: Party who initiated the cancellation (e.g., rider, driver, or system),
+      helping attribute cancellations to the right side of the marketplace.
+  - name: cancel_reason_code
+    type: string
+    description: Coded reason for the cancellation, used to categorise and analyse
+      why trips are being cancelled.
+  - name: city_code
+    type: string
+    description: Market or city where the cancelled trip took place, enabling regional
+      comparison of cancellation trends.
+  - name: requested_at
+    type: string
+    description: Date and time the trip was originally requested, providing the starting
+      point for measuring time to cancellation.
+  - name: cancelled_at
+    type: string
+    description: Date and time the cancellation occurred, used to measure how long
+      after request the cancellation happened.
+  - name: cancellation_fee
+    type: string
+    description: Fee charged to the cancelling party, if any, reflecting the monetary
+      impact of the cancellation.
+
+source:
+  type: landing
+  path: '{landing_root}/trip_cancellations'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- cancellation_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_rideflow_trip_cancellations

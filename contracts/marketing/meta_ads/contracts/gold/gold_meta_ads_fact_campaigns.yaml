@@ -1,0 +1,147 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Campaigns (Meta Ads)
+  target_layer: gold
+  description: Daily campaign and ad set performance pulled from Meta Ads, covering
+    money spent, ad impressions, clicks and attributed conversions in the reported
+    currency, with each spend figure linked to a currency reference so amounts can
+    be interpreted.
+  table_name: '{gold_layer}_meta_ads_fact_campaigns'
+  system: meta_ads
+  domain: marketing
+
+model:
+  fields:
+  - name: campaign_id
+    type: string
+    required: true
+    description: Unique identifier for the Meta advertising campaign. Used to link
+      this campaign's performance to other marketing reports.
+  - name: adset_id
+    type: string
+    required: true
+    description: Unique identifier for the ad set within the campaign. Ad sets group
+      ads that share the same budget and targeting.
+  - name: date
+    type: date
+    required: true
+    description: The reporting date for this row of campaign performance data.
+  - name: impressions
+    type: integer
+    required: false
+    description: How many times the campaign's ads were shown to people. A key measure
+      of reach and visibility.
+  - name: clicks
+    type: integer
+    required: false
+    description: How many times people clicked on the campaign's ads. Indicates engagement
+      and interest.
+  - name: spend
+    type: decimal(18,2)
+    required: false
+    description: The amount of money spent on the campaign, in the account currency.
+      Core input for cost and return calculations.
+  - name: conversions
+    type: integer
+    required: false
+    description: The number of valuable actions (such as purchases or sign-ups) attributed
+      to the campaign. Central to measuring marketing effectiveness.
+  - name: campaign_name
+    type: string
+    required: false
+    description: The human-readable name of the Meta advertising campaign, as set
+      up by the marketing team.
+  - name: adset_name
+    type: string
+    required: false
+    description: The human-readable name of the ad set, describing the audience or
+      budget group it represents.
+  - name: actions_json
+    type: string
+    required: false
+    description: A structured record of the various actions people took after seeing
+      the ads (such as likes, shares, or link clicks), kept in raw form for detailed
+      analysis.
+  - name: currency_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_currency
+      column: currency_sk
+    description: Surrogate key of gold_dim_currency, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_meta_ads_fact_campaigns
+
+primary_key:
+- campaign_id
+- adset_id
+- date
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - campaign_id
+      - adset_id
+      - date
+      name: campaign_id_adset_id_date_unique
+      category: uniqueness
+      description: No two rows share the same campaign_id, adset_id, date.
+  - name: currency_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE currency_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose currency_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.campaign_id,
+      r.adset_id,
+      r.date,
+      r.campaign_name,
+      r.adset_name,
+      r.actions_json,
+      r.impressions AS impressions,
+      r.clicks AS clicks,
+      r.spend AS spend,
+      r.conversions AS conversions,
+      COALESCE(d1.currency_sk, '-1') AS currency_sk
+    FROM source r
+    LEFT JOIN gold_dim_currency d1
+      ON  r.currency = d1.currency_code
+- phase: pre
+  derive:
+    field: system
+    sql: '''meta_ads'''
+
+links:
+- name: gold_dim_currency
+  type: table
+  path: table:`{domain_catalog_prefix}_reference`.{gold_layer}.{gold_layer}_dim_currency
+
+upstream:
+- gold_dim_currency
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_meta_ads_campaigns
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

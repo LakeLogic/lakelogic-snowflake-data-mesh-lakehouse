@@ -1,0 +1,67 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Stage Name
+  target_layer: gold
+  description: 'grain: one row per StageName'
+  table_name: '{gold_layer}_dim_stage_name'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: StageName_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: StageName
+    type: string
+    required: true
+    description: Sales stage of the opportunity.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_stage_name
+
+primary_key:
+- StageName
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - StageName
+      name: StageName_unique
+      category: uniqueness
+      description: No two rows share the same StageName.
+
+materialization:
+  scd1:
+    surrogate_key: StageName_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT StageName
+    FROM source
+    WHERE StageName IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_opportunities
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

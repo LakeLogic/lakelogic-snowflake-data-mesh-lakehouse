@@ -1,0 +1,102 @@
+version: 1.0.0
+
+info:
+  title: Silver — Salesforce Accounts
+  target_layer: silver
+  table_name: '{silver_layer}_salesforce_accounts'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: attributes
+    type: json
+    required: false
+    description: Salesforce API metadata for the record (object type and URL).
+  - name: Id
+    type: string
+    required: true
+    description: Salesforce record ID; unique per record.
+  - name: Name
+    type: string
+    required: false
+    pii: true
+    classification: person_name
+    description: Name of the account or opportunity.
+  - name: Type
+    type: string
+    required: false
+    description: Account type, such as customer or partner.
+  - name: Industry
+    type: string
+    required: false
+    description: Industry the account operates in.
+  - name: BillingCity
+    type: string
+    required: false
+    description: City of the account's billing address.
+  - name: BillingCountry
+    type: string
+    required: false
+    description: Country of the account's billing address.
+  - name: NumberOfEmployees
+    type: Int64
+    required: false
+    description: Number of employees at the account.
+  - name: AnnualRevenue
+    type: decimal(18,2)
+    required: false
+    description: Account's annual revenue.
+  - name: OwnerId
+    type: string
+    required: false
+    description: Salesforce user who owns the record.
+  - name: RideFlow_Account_Code__c
+    type: string
+    required: false
+    description: RideFlow's own code for the business account (custom field).
+  - name: CreatedDate
+    type: timestamp
+    required: false
+    description: When the record was created in Salesforce.
+  - name: LastModifiedDate
+    type: timestamp
+    required: false
+    description: When a user last changed the record in Salesforce.
+  - name: SystemModstamp
+    type: timestamp
+    required: false
+    description: When the record was last changed by a user or by Salesforce itself.
+  - name: IsDeleted
+    type: boolean
+    required: false
+    description: Whether the record is in the Salesforce recycle bin.
+
+primary_key:
+- Id
+
+quality:
+  row_rules:
+  - name: Id_not_null
+    sql: Id IS NOT NULL
+    category: completeness
+    description: id is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - Id
+    sort_by:
+    - LastModifiedDate
+    order: desc
+
+dataset: silver_salesforce_accounts
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_salesforce_accounts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,72 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Platform (Rideflow)
+  target_layer: gold
+  description: A reference list of the booking platforms (apps and channels) rides
+    are booked through, each with a surrogate key for linking rides and other facts
+    back to it, including a '-1' entry standing in for an unknown or unmatched platform.
+    Each record also carries the source system it came from, so platform information
+    can be traced back to its origin.
+  table_name: '{gold_layer}_rideflow_dim_platform'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: platform_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: platform
+    type: string
+    required: true
+    description: The name of the platform (for example the app or channel) where the
+      ride was booked, used to compare activity across platforms.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_rideflow_dim_platform
+
+primary_key:
+- platform
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - platform
+      name: platform_unique
+      category: uniqueness
+      description: No two rows share the same platform.
+
+materialization:
+  scd1:
+    surrogate_key: platform_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT platform
+    FROM source
+    WHERE platform IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_rider_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,108 @@
+version: 1.0.0
+
+info:
+  title: Silver — Rideflow Trip Cancellations
+  target_layer: silver
+  description: Cancellations of booked rides, recorded with the trip, rider and driver
+    involved and which side of the marketplace called it off, along with a coded reason
+    and the market or city where it happened. Each record carries the request and
+    cancellation timestamps, so the gap between them can be measured, and any fee
+    charged to the cancelling party. Records originate from the Rideflow marketplace
+    system.
+  table_name: '{silver_layer}_rideflow_trip_cancellations'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: cancellation_id
+    type: string
+    required: true
+    description: Unique identifier for each trip cancellation record, used to trace
+      and reference individual cancellation events.
+  - name: trip_id
+    type: string
+    required: true
+    description: Identifier of the trip that was cancelled, linking the cancellation
+      back to the original ride request.
+  - name: rider_id
+    type: string
+    required: true
+    description: Identifier of the rider who requested the trip, used to understand
+      cancellation patterns by customer.
+  - name: driver_id
+    type: string
+    required: true
+    description: Identifier of the driver assigned to the trip at the time of cancellation,
+      if one had been matched.
+  - name: cancelled_by
+    type: string
+    required: false
+    description: Party who initiated the cancellation (e.g., rider, driver, or system),
+      helping attribute cancellations to the right side of the marketplace.
+  - name: cancel_reason_code
+    type: string
+    required: false
+    description: Coded reason for the cancellation, used to categorise and analyse
+      why trips are being cancelled.
+  - name: city_code
+    type: string
+    required: false
+    description: Market or city where the cancelled trip took place, enabling regional
+      comparison of cancellation trends.
+  - name: requested_at
+    type: timestamp
+    required: false
+    description: Date and time the trip was originally requested, providing the starting
+      point for measuring time to cancellation.
+  - name: cancelled_at
+    type: timestamp
+    required: false
+    description: Date and time the cancellation occurred, used to measure how long
+      after request the cancellation happened.
+  - name: cancellation_fee
+    type: decimal(18,2)
+    required: false
+    description: Fee charged to the cancelling party, if any, reflecting the monetary
+      impact of the cancellation.
+
+primary_key:
+- cancellation_id
+
+quality:
+  row_rules:
+  - name: cancellation_id_not_null
+    sql: cancellation_id IS NOT NULL
+    category: completeness
+    description: cancellation_id is always present (never null).
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: trip_id_not_null
+    sql: trip_id IS NOT NULL
+    category: completeness
+    description: trip_id is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - cancellation_id
+    sort_by:
+    - cancelled_at
+    order: desc
+
+dataset: silver_rideflow_trip_cancellations
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_rideflow_trip_cancellations
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

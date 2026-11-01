@@ -1,0 +1,91 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Dim Currency Seed
+  target_layer: silver
+  description: A reference list of currencies, each identified by its short code and,
+    where known, the numeric identifier some payment networks use instead, the human-readable
+    name, the display symbol, and the number of decimal places amounts are normally
+    divided into. It comes from an internal source and serves as the key for matching
+    currency details to transactions and balances.
+  table_name: '{silver_layer}_internal_dim_currency_seed'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: currency_code
+    type: string
+    required: true
+    description: The short code that identifies each currency (for example, the three-letter
+      standard used in pricing and reporting). This is the key used to match currency
+      details to transactions and balances.
+  - name: currency_numeric
+    type: Int64
+    required: true
+    description: The numeric identifier for the currency, used by some systems and
+      payment networks in place of the short code. Helps reconcile records that reference
+      currencies by number rather than by name.
+  - name: currency_name
+    type: string
+    required: true
+    description: The human-readable name of the currency as it should appear in reports
+      and to business users. Useful for labelling and for confirming the code maps
+      to the expected currency.
+  - name: symbol
+    type: string
+    required: true
+    description: The familiar symbol used to display amounts in this currency (such
+      as the dollar or euro sign). Supports readable presentation of monetary values
+      in statements and dashboards.
+  - name: minor_units
+    type: Int64
+    required: true
+    description: How many decimal places the currency is normally divided into (for
+      example, 2 for cents). Guides correct rounding and display of amounts so values
+      are shown at the right precision.
+
+primary_key:
+- currency_code
+
+quality:
+  row_rules:
+  - name: currency_code_not_null
+    sql: currency_code IS NOT NULL
+    category: completeness
+    description: currency_code is always present (never null).
+  - name: currency_name_not_null
+    sql: currency_name IS NOT NULL
+    category: completeness
+    description: currency_name is always present (never null).
+  - name: currency_numeric_not_null
+    sql: currency_numeric IS NOT NULL
+    category: completeness
+    description: currency_numeric is always present (never null).
+  - name: minor_units_not_null
+    sql: minor_units IS NOT NULL
+    category: completeness
+    description: minor_units is always present (never null).
+  - name: symbol_not_null
+    sql: symbol IS NOT NULL
+    category: completeness
+    description: symbol is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - currency_code
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+dataset: silver_internal_dim_currency_seed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_dim_currency_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

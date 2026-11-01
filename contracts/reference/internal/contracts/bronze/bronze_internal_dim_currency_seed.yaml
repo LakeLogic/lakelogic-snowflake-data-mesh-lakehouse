@@ -1,0 +1,52 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Currency Seed
+  target_layer: bronze
+  description: A reference list of currencies, each identified by its short code and
+    numeric identifier, with the human-readable name and display symbol used when
+    presenting monetary amounts. It also records how many decimal places each currency
+    is divided into, so figures can be rounded and shown at the right precision. The
+    codes are intended as the key for matching currency details to transactions and
+    balances, and the source is an internal system.
+  table_name: '{bronze_layer}_internal_dim_currency_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: currency_code
+    type: string
+    description: The short code that identifies each currency (for example, the three-letter
+      standard used in pricing and reporting). This is the key used to match currency
+      details to transactions and balances.
+  - name: currency_numeric
+    type: Int64
+    description: The numeric identifier for the currency, used by some systems and
+      payment networks in place of the short code. Helps reconcile records that reference
+      currencies by number rather than by name.
+  - name: currency_name
+    type: string
+    description: The human-readable name of the currency as it should appear in reports
+      and to business users. Useful for labelling and for confirming the code maps
+      to the expected currency.
+  - name: symbol
+    type: string
+    description: The familiar symbol used to display amounts in this currency (such
+      as the dollar or euro sign). Supports readable presentation of monetary values
+      in statements and dashboards.
+  - name: minor_units
+    type: Int64
+    description: How many decimal places the currency is normally divided into (for
+      example, 2 for cents). Guides correct rounding and display of amounts so values
+      are shown at the right precision.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_currency_seed'
+  format: csv
+
+primary_key:
+- currency_code
+
+dataset: bronze_internal_dim_currency_seed

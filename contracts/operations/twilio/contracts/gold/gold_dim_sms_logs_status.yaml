@@ -1,0 +1,71 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Sms Logs Status
+  target_layer: gold
+  description: A reference list of SMS delivery and processing statuses, such as delivered,
+    failed or pending, drawn from Twilio SMS logs, with each status linked to the
+    system where it was captured and to related activity elsewhere via a unique identifier
+    that uses -1 for unknown or unrecorded statuses.
+  table_name: '{gold_layer}_dim_sms_logs_status'
+  system: twilio
+  domain: operations
+
+model:
+  fields:
+  - name: status_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: status
+    type: string
+    required: true
+    description: The delivery or processing status of an SMS message, such as delivered,
+      failed, or pending, as recorded in the SMS logs.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_sms_logs_status
+
+primary_key:
+- status
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - status
+      name: status_unique
+      category: uniqueness
+      description: No two rows share the same status.
+
+materialization:
+  scd1:
+    surrogate_key: status_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT status
+    FROM source
+    WHERE status IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''twilio'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_twilio_sms_logs
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

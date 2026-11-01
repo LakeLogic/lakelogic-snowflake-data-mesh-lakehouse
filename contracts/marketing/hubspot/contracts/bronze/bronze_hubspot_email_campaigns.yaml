@@ -1,0 +1,76 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Hubspot Email Campaigns
+  target_layer: bronze
+  description: Per-recipient records of email marketing campaigns sent through Hubspot,
+    capturing who was mailed, the campaign and subject line, and when each message
+    was sent. Engagement is tracked through open and click timestamps, alongside bounce
+    and unsubscribe flags that signal list health and deliverability. Recipient email
+    addresses and names are personal contact data.
+  table_name: '{bronze_layer}_hubspot_email_campaigns'
+  domain: marketing
+  system: hubspot
+
+model:
+  fields:
+  - name: campaign_id
+    type: string
+    description: Unique identifier for the email campaign this record belongs to.
+      Used to group and compare performance across campaigns.
+  - name: recipient_email
+    type: string
+    pii: true
+    classification: email
+    description: Email address of the person who received the campaign. Personal contact
+      data used for delivery and engagement tracking.
+  - name: recipient_name
+    type: string
+    description: Name of the person who received the campaign. Helps personalize reporting
+      and identify who engaged.
+  - name: campaign_name
+    type: string
+    description: Human-readable name of the email campaign. Makes it easy to recognize
+      and report on campaigns.
+  - name: subject_line
+    type: string
+    description: The subject line shown in the recipient's inbox. Key driver of whether
+      the email gets opened.
+  - name: sent_at
+    type: string
+    description: Date and time the email was sent to the recipient. Marks the start
+      of that recipient's engagement timeline.
+  - name: opened_at
+    type: string
+    description: Date and time the recipient opened the email, if they did. Indicates
+      initial interest in the message.
+  - name: clicked_at
+    type: string
+    description: Date and time the recipient clicked a link in the email, if they
+      did. Shows deeper engagement than an open.
+  - name: bounced
+    type: boolean
+    description: Whether the email failed to reach the recipient. High bounce rates
+      signal list quality or deliverability issues.
+  - name: unsubscribed
+    type: boolean
+    description: Whether the recipient opted out of future emails after this campaign.
+      Tracks list health and audience loss.
+
+source:
+  type: landing
+  path: '{landing_root}/email_campaigns'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- campaign_id
+- recipient_email
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_hubspot_email_campaigns

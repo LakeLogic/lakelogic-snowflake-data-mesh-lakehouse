@@ -1,0 +1,67 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Use
+  target_layer: gold
+  description: 'grain: one row per use'
+  table_name: '{gold_layer}_dim_use'
+  system: onboarding
+  domain: operations
+
+model:
+  fields:
+  - name: use_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: use
+    type: string
+    required: true
+    description: Permitted use of the insured vehicle, as stated on the certificate.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_use
+
+primary_key:
+- use
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - use
+      name: use_unique
+      category: uniqueness
+      description: No two rows share the same use.
+
+materialization:
+  scd1:
+    surrogate_key: use_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT use
+    FROM source
+    WHERE use IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''onboarding'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_onboarding_insurance_certificates
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

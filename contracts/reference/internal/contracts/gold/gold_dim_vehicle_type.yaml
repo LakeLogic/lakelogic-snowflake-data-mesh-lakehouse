@@ -1,0 +1,82 @@
+version: 1.0.0
+
+info:
+  data_product: reference_data
+  data_product_output: dim_vehicle_type
+  title: Gold — Dim Vehicle Type
+  target_layer: gold
+  description: Reference data listing vehicle types, each with a short code, a human-readable
+    name shown to staff and customers, a passenger capacity used for capacity planning
+    and booking rules, and the product or service tier it belongs to. Records also
+    carry a flag for whether the type must pass an inspection before use, marking
+    those with extra compliance obligations, and a field naming the source system
+    each record came from for lineage and troubleshooting. A special key value marks
+    records whose true type is unknown.
+  table_name: '{gold_layer}_dim_vehicle_type'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: vehicle_type_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: vehicle_type_code
+    type: string
+    required: true
+    description: Short code that uniquely identifies each vehicle type in the reference
+      list, used to link vehicle records to their type.
+  - name: vehicle_type_name
+    type: string
+    required: false
+    description: The human-readable name of the vehicle type, shown to staff and customers
+      when describing a vehicle category.
+  - name: passenger_capacity
+    type: Int64
+    required: false
+    description: The number of passengers the vehicle type is designed to carry, used
+      for capacity planning and booking rules.
+  - name: product_tier
+    type: string
+    required: false
+    description: The product or service tier this vehicle type belongs to, indicating
+      the level of offering it represents.
+  - name: requires_inspection
+    type: boolean
+    required: false
+    description: Whether this vehicle type must pass an inspection before use, flagging
+      types that carry extra compliance obligations.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_vehicle_type
+
+primary_key:
+- vehicle_type_code
+
+materialization:
+  scd1:
+    surrogate_key: vehicle_type_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_internal_dim_vehicle_type_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''internal'''

@@ -1,0 +1,308 @@
+version: 1.0.0
+
+info:
+  title: Silver — Rideflow Trip Completed
+  target_layer: silver
+  description: Completed ride records from the Rideflow marketplace, each identified
+    by a trip and linked to the rider who booked it and the driver who carried it
+    out, with pickup and drop-off coordinates that constitute sensitive location data.
+    The trips carry the commercial detail of the journey — fare before tip, any surge
+    uplift, tip amount, payment method, distance and duration — alongside timestamps
+    from request through pickup to drop-off, the city and service tier, and the ratings
+    each side gave the other. Free-text notes may hold context for support or disputes.
+  table_name: '{silver_layer}_rideflow_trip_completed'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: trip_id
+    type: string
+    required: true
+    description: Unique identifier for a single completed ride, used to trace each
+      trip across bookings, billing and support.
+  - name: rider_id
+    type: string
+    required: true
+    description: Identifies the customer who took the ride, allowing trip history
+      and rider-level analysis.
+  - name: driver_id
+    type: string
+    required: true
+    description: Identifies the driver who completed the ride, supporting driver performance
+      and earnings tracking.
+  - name: trip_type
+    type: string
+    required: false
+    description: Category of the ride (for example standard or premium), used to compare
+      service levels and pricing.
+  - name: pickup_lat
+    type: float
+    required: false
+    pii: true
+    classification: gps_coordinate
+    description: Latitude of where the rider was picked up; sensitive location data
+      used for mapping and demand analysis.
+  - name: pickup_lng
+    type: float
+    required: false
+    pii: true
+    classification: gps_coordinate
+    description: Longitude of where the rider was picked up; sensitive location data
+      used for mapping and demand analysis.
+  - name: dropoff_lat
+    type: float
+    required: false
+    pii: true
+    classification: gps_coordinate
+    description: Latitude of where the rider was dropped off; sensitive location data
+      used for route and coverage analysis.
+  - name: dropoff_lng
+    type: float
+    required: true
+    pii: true
+    classification: gps_coordinate
+    description: Longitude of where the rider was dropped off; sensitive location
+      data used for route and coverage analysis.
+    min: -180.0
+    max: 180.0
+  - name: city_code
+    type: string
+    required: false
+    description: Short code for the city where the trip took place, enabling regional
+      reporting and comparisons.
+  - name: requested_at
+    type: timestamp
+    required: false
+    description: When the rider requested the trip, useful for measuring wait times
+      and demand patterns.
+  - name: pickup_at
+    type: timestamp
+    required: false
+    description: When the rider was actually picked up, marking the start of the paid
+      journey.
+  - name: dropoff_at
+    type: timestamp
+    required: false
+    description: When the rider was dropped off, marking the end of the journey and
+      used to calculate trip duration.
+  - name: distance_km
+    type: float
+    required: false
+    description: Distance travelled on the trip in kilometres, a key driver of fare
+      and efficiency analysis.
+  - name: duration_minutes
+    type: integer
+    required: false
+    description: How long the trip took in minutes, used to assess service speed and
+      pricing fairness.
+  - name: fare_amount
+    type: decimal(10,2)
+    required: false
+    description: The amount charged for the trip before any tip, central to revenue
+      reporting.
+  - name: surge_multiplier
+    type: float
+    required: false
+    description: How much the fare was scaled up during high-demand periods, helping
+      explain price variation.
+  - name: tip_amount
+    type: decimal(10,2)
+    required: false
+    description: Extra amount the rider chose to give the driver, reflecting satisfaction
+      and affecting driver earnings.
+  - name: payment_method
+    type: string
+    required: false
+    description: How the rider paid (for example card or cash), used to analyse payment
+      mix and reconciliation.
+  - name: rider_rating
+    type: float
+    required: false
+    description: The score the rider gave the driver for this trip, a signal of customer
+      satisfaction.
+  - name: driver_rating
+    type: float
+    required: false
+    description: The score the driver gave the rider for this trip, used to monitor
+      rider behaviour.
+  - name: notes
+    type: string
+    required: false
+    description: Free-text comments recorded about the trip, which may contain context
+      for support or disputes.
+
+primary_key:
+- trip_id
+
+quality:
+  row_rules:
+  - name: trip_id_not_null
+    sql: trip_id IS NOT NULL
+    category: completeness
+    description: trip_id is always present (never null).
+  - name: pickup_lat_range_min
+    sql: pickup_lat IS NULL OR pickup_lat >= -90.0
+    category: validity
+    description: pickup_lat is at least -90.0 when present.
+  - name: pickup_lat_range_max
+    sql: pickup_lat IS NULL OR pickup_lat <= 90.0
+    category: validity
+    description: pickup_lat is at most 90.0 when present.
+  - name: pickup_lng_range_min
+    sql: pickup_lng IS NULL OR pickup_lng >= -180.0
+    category: validity
+    description: pickup_lng is at least -180.0 when present.
+  - name: pickup_lng_range_max
+    sql: pickup_lng IS NULL OR pickup_lng <= 180.0
+    category: validity
+    description: pickup_lng is at most 180.0 when present.
+  - name: dropoff_lat_range_min
+    sql: dropoff_lat IS NULL OR dropoff_lat >= -90.0
+    category: validity
+    description: dropoff_lat is at least -90.0 when present.
+  - name: dropoff_lat_range_max
+    sql: dropoff_lat IS NULL OR dropoff_lat <= 90.0
+    category: validity
+    description: dropoff_lat is at most 90.0 when present.
+  - name: dropoff_lng_range_min
+    sql: dropoff_lng IS NULL OR dropoff_lng >= -180.0
+    category: validity
+    description: dropoff_lng is at least -180.0 when present.
+  - name: dropoff_lng_range_max
+    sql: dropoff_lng IS NULL OR dropoff_lng <= 180.0
+    category: validity
+    description: dropoff_lng is at most 180.0 when present.
+  - name: city_code_accepted_values
+    sql: city_code IS NULL OR city_code IN ('BER', 'LON', 'NYC', 'PAR', 'SYD', 'TYO')
+    category: validity
+    description: 'city_code is one of: BER, LON, NYC, PAR, SYD, TYO when present.'
+  - name: distance_km_range_min
+    sql: distance_km IS NULL OR distance_km >= 0
+    category: validity
+    description: distance_km is at least 0 when present.
+  - name: distance_km_range_max
+    sql: distance_km IS NULL OR distance_km <= 1000
+    category: validity
+    description: distance_km is at most 1000 when present.
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: driver_rating_range_min
+    sql: driver_rating IS NULL OR driver_rating >= 1
+    category: validity
+    description: driver_rating is at least 1 when present.
+  - name: driver_rating_range_max
+    sql: driver_rating IS NULL OR driver_rating <= 5
+    category: validity
+    description: driver_rating is at most 5 when present.
+  - name: dropoff_lat_range_min
+    sql: dropoff_lat IS NULL OR dropoff_lat >= -90
+    category: validity
+    description: dropoff_lat is at least -90 when present.
+  - name: dropoff_lat_range_max
+    sql: dropoff_lat IS NULL OR dropoff_lat <= 90
+    category: validity
+    description: dropoff_lat is at most 90 when present.
+  - name: dropoff_lng_range_min
+    sql: dropoff_lng IS NULL OR dropoff_lng >= -180
+    category: validity
+    description: dropoff_lng is at least -180 when present.
+  - name: dropoff_lng_range_max
+    sql: dropoff_lng IS NULL OR dropoff_lng <= 180
+    category: validity
+    description: dropoff_lng is at most 180 when present.
+  - name: dropoff_lng_not_null
+    sql: dropoff_lng IS NOT NULL
+    category: completeness
+    description: dropoff_lng is always present (never null).
+  - name: duration_minutes_range_min
+    sql: duration_minutes IS NULL OR duration_minutes >= 0
+    category: validity
+    description: duration_minutes is at least 0 when present.
+  - name: duration_minutes_range_max
+    sql: duration_minutes IS NULL OR duration_minutes <= 1440
+    category: validity
+    description: duration_minutes is at most 1440 when present.
+  - name: fare_amount_range_min
+    sql: fare_amount IS NULL OR fare_amount >= 0
+    category: validity
+    description: fare_amount is at least 0 when present.
+  - name: fare_amount_range_max
+    sql: fare_amount IS NULL OR fare_amount <= 1000000
+    category: validity
+    description: fare_amount is at most 1000000 when present.
+  - name: payment_method_accepted_values
+    sql: payment_method IS NULL OR payment_method IN ('apple_pay', 'bank_transfer',
+      'credit_card', 'debit_card', 'google_pay', 'paypal')
+    category: validity
+    description: 'payment_method is one of: apple_pay, bank_transfer, credit_card,
+      debit_card, google_pay, paypal when present.'
+  - name: pickup_lat_range_min
+    sql: pickup_lat IS NULL OR pickup_lat >= -90
+    category: validity
+    description: pickup_lat is at least -90 when present.
+  - name: pickup_lat_range_max
+    sql: pickup_lat IS NULL OR pickup_lat <= 90
+    category: validity
+    description: pickup_lat is at most 90 when present.
+  - name: pickup_lng_range_min
+    sql: pickup_lng IS NULL OR pickup_lng >= -180
+    category: validity
+    description: pickup_lng is at least -180 when present.
+  - name: pickup_lng_range_max
+    sql: pickup_lng IS NULL OR pickup_lng <= 180
+    category: validity
+    description: pickup_lng is at most 180 when present.
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: rider_rating_range_min
+    sql: rider_rating IS NULL OR rider_rating >= 1
+    category: validity
+    description: rider_rating is at least 1 when present.
+  - name: rider_rating_range_max
+    sql: rider_rating IS NULL OR rider_rating <= 5
+    category: validity
+    description: rider_rating is at most 5 when present.
+  - name: surge_multiplier_range_min
+    sql: surge_multiplier IS NULL OR surge_multiplier >= 1
+    category: validity
+    description: surge_multiplier is at least 1 when present.
+  - name: surge_multiplier_range_max
+    sql: surge_multiplier IS NULL OR surge_multiplier <= 10
+    category: validity
+    description: surge_multiplier is at most 10 when present.
+  - name: tip_amount_range_min
+    sql: tip_amount IS NULL OR tip_amount >= 0
+    category: validity
+    description: tip_amount is at least 0 when present.
+  - name: tip_amount_range_max
+    sql: tip_amount IS NULL OR tip_amount <= 10000
+    category: validity
+    description: tip_amount is at most 10000 when present.
+  - name: trip_type_accepted_values
+    sql: trip_type IS NULL OR trip_type IN ('eats_delivery', 'ride')
+    category: validity
+    description: 'trip_type is one of: eats_delivery, ride when present.'
+
+transformations:
+- deduplicate:
+    by:
+    - trip_id
+    sort_by:
+    - dropoff_at
+    order: desc
+
+dataset: silver_rideflow_trip_completed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_rideflow_trip_completed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

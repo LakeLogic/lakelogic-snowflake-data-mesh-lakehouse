@@ -1,0 +1,84 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Twilio Sms Logs
+  target_layer: bronze
+  description: Text messages exchanged with customers, each carrying a unique identifier,
+    the sending and receiving phone numbers, and the message content itself, with
+    the phone numbers flagged as personal contact data. Delivery state, direction,
+    and any failure code show whether a message was sent or received and how it ended
+    up, alongside timestamps for sending and confirmed delivery. The number of message
+    parts and the price with its unit support cost tracking and billing reconciliation.
+  table_name: '{bronze_layer}_twilio_sms_logs'
+  domain: operations
+  system: twilio
+
+model:
+  fields:
+  - name: message_sid
+    type: string
+    description: Unique identifier for this text message, used to trace it across
+      systems and support requests.
+  - name: recipient_phone
+    type: string
+    pii: true
+    classification: phone
+    description: Phone number the message was sent to. Personal contact data, so handle
+      with privacy care.
+  - name: sender_phone
+    type: string
+    pii: true
+    classification: phone
+    description: Phone number the message was sent from. Personal contact data, so
+      handle with privacy care.
+  - name: message_body
+    type: string
+    description: The actual text content of the message as sent or received.
+  - name: status
+    type: string
+    description: Current delivery state of the message, such as queued, sent, delivered
+      or failed.
+  - name: direction
+    type: string
+    description: Whether the message was outbound (sent by us) or inbound (received
+      from a customer).
+  - name: num_segments
+    type: string
+    description: How many message parts the text was split into for delivery, which
+      affects cost and completeness.
+  - name: price
+    type: Float64
+    description: Amount charged for this message, used for cost tracking and billing
+      reconciliation.
+  - name: price_unit
+    type: Float64
+    description: Currency or unit basis for the message price, so costs are interpreted
+      correctly.
+  - name: sent_at
+    type: string
+    description: Date and time the message was sent.
+  - name: delivered_at
+    type: string
+    description: Date and time the message was confirmed delivered, useful for measuring
+      delivery speed.
+  - name: error_code
+    type: string
+    description: Code explaining why a message failed, if it did, to help diagnose
+      delivery problems.
+
+source:
+  type: landing
+  path: '{landing_root}/sms_logs'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- message_sid
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_twilio_sms_logs

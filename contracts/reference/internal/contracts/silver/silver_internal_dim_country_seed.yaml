@@ -1,0 +1,100 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Dim Country Seed
+  target_layer: silver
+  description: A reference list of countries, each identified by its standard three-letter
+    code and, where available, its two-letter code and numeric identifier, alongside
+    the country's name, broad geographic region and finer sub-region. The codes support
+    cross-system matching and compact country references, while the region and sub-region
+    values allow geographic grouping and reporting. Only the three-letter code is
+    guaranteed present; every other attribute may be missing.
+  table_name: '{silver_layer}_internal_dim_country_seed'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: country_alpha3
+    type: string
+    required: true
+    description: Three-letter country code used to identify a country in international
+      standards and cross-system matching.
+  - name: country_alpha2
+    type: string
+    required: true
+    description: Two-letter country code commonly used for compact country references
+      and reporting.
+  - name: country_name
+    type: string
+    required: true
+    description: The human-readable name of the country as recorded in the reference
+      list.
+  - name: country_numeric
+    type: Int64
+    required: true
+    description: Standard numeric country identifier used for consistent country matching
+      across systems.
+  - name: region
+    type: string
+    required: true
+    description: The broad geographic region the country belongs to, useful for regional
+      reporting and grouping.
+  - name: sub_region
+    type: string
+    required: true
+    description: A finer geographic grouping within the region, useful for more detailed
+      geographic analysis.
+
+primary_key:
+- country_alpha3
+
+quality:
+  row_rules:
+  - name: country_alpha3_not_null
+    sql: country_alpha3 IS NOT NULL
+    category: completeness
+    description: country_alpha3 is always present (never null).
+  - name: country_alpha2_not_null
+    sql: country_alpha2 IS NOT NULL
+    category: completeness
+    description: country_alpha2 is always present (never null).
+  - name: country_name_not_null
+    sql: country_name IS NOT NULL
+    category: completeness
+    description: country_name is always present (never null).
+  - name: country_numeric_not_null
+    sql: country_numeric IS NOT NULL
+    category: completeness
+    description: country_numeric is always present (never null).
+  - name: region_not_null
+    sql: region IS NOT NULL
+    category: completeness
+    description: region is always present (never null).
+  - name: sub_region_not_null
+    sql: sub_region IS NOT NULL
+    category: completeness
+    description: sub_region is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - country_alpha3
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+materialization:
+  partition_by:
+  - country_alpha2
+
+dataset: silver_internal_dim_country_seed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_dim_country_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

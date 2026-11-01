@@ -1,0 +1,159 @@
+version: 1.0.0
+
+info:
+  title: Silver — Meta Ads Campaigns
+  target_layer: silver
+  description: Meta advertising campaign performance broken out by ad set and reporting
+    date, covering how often ads were shown, how often people clicked them, and the
+    money spent in the account currency. Alongside spend and currency, it records
+    attributed conversions and a raw structured log of the actions people took after
+    seeing the ads, such as likes, shares and link clicks. Campaign and ad set identifiers
+    and names come from the marketing team's own setup in the Meta advertising platform.
+  table_name: '{silver_layer}_meta_ads_campaigns'
+  system: meta_ads
+  domain: marketing
+
+model:
+  fields:
+  - name: campaign_id
+    type: string
+    required: true
+    description: Unique identifier for the Meta advertising campaign. Used to link
+      this campaign's performance to other marketing reports.
+  - name: campaign_name
+    type: string
+    required: true
+    description: The human-readable name of the Meta advertising campaign, as set
+      up by the marketing team.
+  - name: adset_id
+    type: string
+    required: true
+    description: Unique identifier for the ad set within the campaign. Ad sets group
+      ads that share the same budget and targeting.
+  - name: adset_name
+    type: string
+    required: true
+    description: The human-readable name of the ad set, describing the audience or
+      budget group it represents.
+  - name: date
+    type: date
+    required: true
+    description: The reporting date for this row of campaign performance data.
+  - name: impressions
+    type: integer
+    required: false
+    description: How many times the campaign's ads were shown to people. A key measure
+      of reach and visibility.
+  - name: clicks
+    type: integer
+    required: false
+    description: How many times people clicked on the campaign's ads. Indicates engagement
+      and interest.
+  - name: spend
+    type: decimal(18,2)
+    required: false
+    description: The amount of money spent on the campaign, in the account currency.
+      Core input for cost and return calculations.
+  - name: actions_json
+    type: string
+    required: false
+    description: A structured record of the various actions people took after seeing
+      the ads (such as likes, shares, or link clicks), kept in raw form for detailed
+      analysis.
+  - name: conversions
+    type: integer
+    required: false
+    description: The number of valuable actions (such as purchases or sign-ups) attributed
+      to the campaign. Central to measuring marketing effectiveness.
+  - name: currency
+    type: string
+    required: false
+    description: The currency in which spend and other monetary values are reported,
+      so amounts can be compared and converted correctly.
+
+primary_key:
+- campaign_id
+- adset_id
+- date
+
+quality:
+  row_rules:
+  - name: campaign_id_not_null
+    sql: campaign_id IS NOT NULL
+    category: completeness
+    description: campaign_id is always present (never null).
+  - name: adset_id_not_null
+    sql: adset_id IS NOT NULL
+    category: completeness
+    description: adset_id is always present (never null).
+  - name: date_not_null
+    sql: date IS NOT NULL
+    category: completeness
+    description: date is always present (never null).
+  - name: adset_name_not_null
+    sql: adset_name IS NOT NULL
+    category: completeness
+    description: adset_name is always present (never null).
+  - name: campaign_name_not_null
+    sql: campaign_name IS NOT NULL
+    category: completeness
+    description: campaign_name is always present (never null).
+  - name: clicks_range_min
+    sql: clicks IS NULL OR clicks >= 0
+    category: validity
+    description: clicks is at least 0 when present.
+  - name: clicks_range_max
+    sql: clicks IS NULL OR clicks <= 100000000
+    category: validity
+    description: clicks is at most 100000000 when present.
+  - name: conversions_range_min
+    sql: conversions IS NULL OR conversions >= 0
+    category: validity
+    description: conversions is at least 0 when present.
+  - name: conversions_range_max
+    sql: conversions IS NULL OR conversions <= 10000000
+    category: validity
+    description: conversions is at most 10000000 when present.
+  - name: currency_accepted_values
+    sql: currency IS NULL OR currency IN ('AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP',
+      'JPY', 'USD')
+    category: validity
+    description: 'currency is one of: AUD, CAD, CHF, CNY, EUR, GBP, JPY, USD when
+      present.'
+  - name: impressions_range_min
+    sql: impressions IS NULL OR impressions >= 0
+    category: validity
+    description: impressions is at least 0 when present.
+  - name: impressions_range_max
+    sql: impressions IS NULL OR impressions <= 1000000000
+    category: validity
+    description: impressions is at most 1000000000 when present.
+  - name: spend_range_min
+    sql: spend IS NULL OR spend >= 0
+    category: validity
+    description: spend is at least 0 when present.
+  - name: spend_range_max
+    sql: spend IS NULL OR spend <= 1000000
+    category: validity
+    description: spend is at most 1000000 when present.
+
+transformations:
+- deduplicate:
+    by:
+    - campaign_id
+    - adset_id
+    - date
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+dataset: silver_meta_ads_campaigns
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_meta_ads_campaigns
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,67 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Priority (Salesforce)
+  target_layer: gold
+  description: 'grain: one row per Priority'
+  table_name: '{gold_layer}_salesforce_dim_priority'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: Priority_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: Priority
+    type: string
+    required: true
+    description: Case priority.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_salesforce_dim_priority
+
+primary_key:
+- Priority
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - Priority
+      name: Priority_unique
+      category: uniqueness
+      description: No two rows share the same Priority.
+
+materialization:
+  scd1:
+    surrogate_key: Priority_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT Priority
+    FROM source
+    WHERE Priority IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_cases
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

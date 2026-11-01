@@ -1,0 +1,68 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Entry Point
+  target_layer: gold
+  description: 'grain: one row per entry_point'
+  table_name: '{gold_layer}_dim_entry_point'
+  system: zendesk
+  domain: operations
+
+model:
+  fields:
+  - name: entry_point_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: entry_point
+    type: string
+    required: true
+    description: The route or channel through which the support request first entered
+      the system, helping teams understand how customers reach out.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_entry_point
+
+primary_key:
+- entry_point
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - entry_point
+      name: entry_point_unique
+      category: uniqueness
+      description: No two rows share the same entry_point.
+
+materialization:
+  scd1:
+    surrogate_key: entry_point_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT entry_point
+    FROM source
+    WHERE entry_point IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''zendesk'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_zendesk_support_tickets
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

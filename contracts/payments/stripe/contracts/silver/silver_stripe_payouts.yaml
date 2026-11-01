@@ -1,0 +1,128 @@
+version: 1.0.0
+
+info:
+  title: Silver — Stripe Payouts
+  target_layer: silver
+  description: Payouts sent from Stripe to bank accounts, each traced end to end by
+    a unique reference and linked to the driver or payee receiving the funds. Records
+    carry the money involved — amount and currency — along with the payout status,
+    the expected or actual arrival date in the bank account, and when the payout was
+    initiated. Recipient contact details and the last four digits of the destination
+    bank account are included, so the data identifies both the person paid and where
+    the money went.
+  table_name: '{silver_layer}_stripe_payouts'
+  system: stripe
+  domain: payments
+
+model:
+  fields:
+  - name: payout_id
+    type: string
+    required: true
+    description: Unique reference for a single payout sent from Stripe to a bank account.
+      Used to trace and reconcile each payout end to end.
+  - name: driver_id
+    type: string
+    required: true
+    description: Identifier of the driver or payee this payout relates to. Links the
+      payout to the person or account receiving the funds.
+  - name: amount
+    type: decimal(18,2)
+    required: false
+    description: The payout amount in the smallest currency unit. Shows how much money
+      was transferred in this payout.
+  - name: currency
+    type: string
+    required: false
+    description: The currency in which the payout was made. Needed to interpret the
+      amount and for financial reporting.
+  - name: status
+    type: string
+    required: true
+    description: Current state of the payout, such as pending, paid, or failed. Indicates
+      whether the money has reached the bank account.
+  - name: payout_email
+    type: string
+    required: false
+    pii: true
+    classification: email
+    description: Email address associated with the payout recipient. Personal contact
+      information used for payout notifications.
+  - name: bank_account_last_four
+    type: string
+    required: false
+    sensitive: true
+    classification: financial_account
+    description: The last four digits of the bank account that received the payout.
+      Helps identify the destination account without exposing full details.
+  - name: arrival_date
+    type: date
+    required: false
+    description: The date the payout is expected to or did arrive in the bank account.
+      Used for cash-flow and reconciliation tracking.
+  - name: created_at
+    type: timestamp
+    required: true
+    description: The date and time the payout record was created. Marks when the payout
+      was initiated.
+
+primary_key:
+- payout_id
+
+quality:
+  row_rules:
+  - name: payout_id_not_null
+    sql: payout_id IS NOT NULL
+    category: completeness
+    description: payout_id is always present (never null).
+  - name: amount_range_min
+    sql: amount IS NULL OR amount >= 0
+    category: validity
+    description: amount is at least 0 when present.
+  - name: amount_range_max
+    sql: amount IS NULL OR amount <= 1000000
+    category: validity
+    description: amount is at most 1000000 when present.
+  - name: created_at_not_null
+    sql: created_at IS NOT NULL
+    category: completeness
+    description: created_at is always present (never null).
+  - name: currency_accepted_values
+    sql: currency IS NULL OR currency IN ('AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP',
+      'JPY', 'USD')
+    category: validity
+    description: 'currency is one of: AUD, CAD, CHF, CNY, EUR, GBP, JPY, USD when
+      present.'
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+
+transformations:
+- deduplicate:
+    by:
+    - payout_id
+    sort_by:
+    - created_at
+    order: desc
+
+dataset: silver_stripe_payouts
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_stripe_payouts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

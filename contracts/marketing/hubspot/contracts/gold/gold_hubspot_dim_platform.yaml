@@ -1,0 +1,71 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Platform (Hubspot)
+  target_layer: gold
+  description: A reference list of marketing platforms, each named and tagged with
+    the source system it was recorded from, with a surrogate key that links a platform
+    to related data elsewhere and a placeholder value standing in where the true platform
+    is unknown. It comes from Hubspot.
+  table_name: '{gold_layer}_hubspot_dim_platform'
+  system: hubspot
+  domain: marketing
+
+model:
+  fields:
+  - name: platform_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: platform
+    type: string
+    required: true
+    description: The name of the marketing platform this record describes, used to
+      group and compare activity by platform.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_hubspot_dim_platform
+
+primary_key:
+- platform
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - platform
+      name: platform_unique
+      category: uniqueness
+      description: No two rows share the same platform.
+
+materialization:
+  scd1:
+    surrogate_key: platform_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT platform
+    FROM source
+    WHERE platform IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''hubspot'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_hubspot_push_notifications
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

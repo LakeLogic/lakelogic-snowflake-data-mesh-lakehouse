@@ -1,0 +1,130 @@
+version: 1.0.0
+
+info:
+  title: Silver — Checkr Background Checks
+  target_layer: silver
+  description: Background screening reports for drivers and workers, sourced from
+    Checkr, each identified by a report identifier and linked to the person's operational
+    record. The content is largely personal data — full legal name, date of birth,
+    the last four digits of the Social Security number, driver's licence number and
+    residential address — alongside the screening's status, its overall result, the
+    final adjudication decision, and when it was requested and completed.
+  table_name: '{silver_layer}_checkr_background_checks'
+  system: checkr
+  domain: operations
+
+model:
+  fields:
+  - name: report_id
+    type: string
+    required: true
+    description: Unique identifier for a background check report, used to track and
+      reference the screening throughout its lifecycle.
+  - name: driver_id
+    type: string
+    required: false
+    description: Identifier for the driver or worker who is the subject of the background
+      check, linking the report to the person's operational record.
+  - name: full_name
+    type: string
+    required: false
+    pii: true
+    classification: person_name
+    description: The full legal name of the person being screened, used to match the
+      report to the correct individual.
+  - name: date_of_birth
+    type: string
+    required: false
+    pii: true
+    classification: date_of_birth
+    description: The person's date of birth, used to verify identity and ensure the
+      background check is matched to the right individual.
+  - name: ssn_last_four
+    type: string
+    required: false
+    pii: true
+    classification: national_id
+    description: The last four digits of the person's Social Security number, used
+      as a partial identity check without storing the full number.
+  - name: licence_number
+    type: string
+    required: false
+    pii: true
+    classification: licence_id
+    description: The person's driver's licence number, used to verify identity and
+      confirm eligibility for driving-related roles.
+  - name: address
+    type: string
+    required: false
+    pii: true
+    classification: postal_address
+    description: The person's residential address, used for identity verification
+      and to determine which jurisdictions to search during screening.
+  - name: status
+    type: string
+    required: true
+    description: The current stage of the background check process, indicating whether
+      the report is pending, in progress, or complete.
+  - name: result
+    type: string
+    required: false
+    description: The overall outcome of the background check, showing whether the
+      screening found any records of concern.
+  - name: completed_at
+    type: timestamp
+    required: false
+    description: The date and time the background check finished, useful for tracking
+      turnaround times and compliance deadlines.
+  - name: created_at
+    type: timestamp
+    required: true
+    description: The date and time the background check was requested, marking when
+      the screening process began.
+  - name: adjudication
+    type: string
+    required: false
+    description: The final hiring decision based on the background check results,
+      showing whether the person was cleared, flagged, or requires review.
+
+primary_key:
+- report_id
+
+quality:
+  row_rules:
+  - name: report_id_not_null
+    sql: report_id IS NOT NULL
+    category: completeness
+    description: report_id is always present (never null).
+  - name: created_at_not_null
+    sql: created_at IS NOT NULL
+    category: completeness
+    description: created_at is always present (never null).
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+
+transformations:
+- deduplicate:
+    by:
+    - report_id
+    sort_by:
+    - completed_at
+    order: desc
+
+dataset: silver_checkr_background_checks
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_checkr_background_checks
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

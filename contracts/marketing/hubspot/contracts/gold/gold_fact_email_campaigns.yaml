@@ -1,0 +1,151 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Email Campaigns
+  target_layer: gold
+  description: Email campaign performance records from HubSpot, one row per recipient
+    per campaign, capturing who was sent which campaign and subject line and whether
+    they opened, clicked, bounced or unsubscribed, with timestamps for each of those
+    events. Recipient email addresses are personal contact data, and the engagement
+    stage is limited to delivered or clicked.
+  table_name: '{gold_layer}_fact_email_campaigns'
+  system: hubspot
+  domain: marketing
+
+model:
+  fields:
+  - name: campaign_id
+    type: string
+    required: true
+    description: Unique identifier for the email campaign this record belongs to.
+      Used to group and compare performance across campaigns.
+  - name: recipient_email
+    type: string
+    required: true
+    pii: true
+    classification: email
+    description: Email address of the person who received the campaign. Personal contact
+      data used for delivery and engagement tracking.
+  - name: sent_at
+    type: timestamp
+    required: false
+    description: Date and time the email was sent to the recipient. Marks the start
+      of that recipient's engagement timeline.
+  - name: opened_at
+    type: timestamp
+    required: false
+    description: Date and time the recipient opened the email, if they did. Indicates
+      initial interest in the message.
+  - name: clicked_at
+    type: timestamp
+    required: false
+    description: Date and time the recipient clicked a link in the email, if they
+      did. Shows deeper engagement than an open.
+  - name: campaign_name
+    type: string
+    required: false
+    description: Human-readable name of the email campaign. Makes it easy to recognize
+      and report on campaigns.
+  - name: subject_line
+    type: string
+    required: false
+    description: The subject line shown in the recipient's inbox. Key driver of whether
+      the email gets opened.
+  - name: recipient_name
+    type: string
+    required: false
+    description: Name of the person who received the campaign. Helps personalize reporting
+      and identify who engaged.
+  - name: bounced
+    type: boolean
+    required: false
+    description: Whether the email failed to reach the recipient. High bounce rates
+      signal list quality or deliverability issues.
+  - name: unsubscribed
+    type: boolean
+    required: false
+    description: Whether the recipient opted out of future emails after this campaign.
+      Tracks list health and audience loss.
+  - name: engagement_stage
+    type: string
+    required: true
+    description: 'Derived from clicked_at by rule: one of clicked, not_engaged.'
+  - name: open_status
+    type: string
+    required: true
+    description: 'Derived from opened_at by rule: one of opened, not_opened.'
+  - name: sent_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `sent_at`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_email_campaigns
+
+primary_key:
+- campaign_id
+- recipient_email
+
+quality:
+  row_rules:
+  - name: engagement_stage_accepted_values
+    sql: engagement_stage IN ('clicked', 'not_engaged')
+    category: validity
+    description: 'engagement_stage is one of: clicked, not_engaged.'
+  - name: open_status_accepted_values
+    sql: open_status IN ('opened', 'not_opened')
+    category: validity
+    description: 'open_status is one of: opened, not_opened.'
+  dataset_rules:
+  - unique:
+      columns:
+      - campaign_id
+      - recipient_email
+      name: campaign_id_recipient_email_unique
+      category: uniqueness
+      description: No two rows share the same campaign_id, recipient_email.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.campaign_id,
+      r.recipient_email,
+      r.sent_at,
+      r.opened_at,
+      r.clicked_at,
+      r.campaign_name,
+      r.subject_line,
+      r.recipient_name,
+      r.bounced,
+      r.unsubscribed,
+      CASE WHEN r.clicked_at IS NOT NULL THEN 'clicked' ELSE 'not_engaged' END AS engagement_stage,
+      CASE WHEN r.opened_at IS NOT NULL THEN 'opened' ELSE 'not_opened' END AS open_status,
+      CAST(r.sent_at AS DATE) AS sent_date
+    FROM source r
+- phase: pre
+  derive:
+    field: system
+    sql: '''hubspot'''
+
+materialization:
+  fact:
+    type: accumulating_snapshot
+    milestone_dates:
+    - sent_at
+    - opened_at
+    - clicked_at
+  partition_by:
+  - sent_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_hubspot_email_campaigns
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

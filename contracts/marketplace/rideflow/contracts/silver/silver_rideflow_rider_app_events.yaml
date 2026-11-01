@@ -1,0 +1,118 @@
+version: 1.0.0
+
+info:
+  title: Silver — Rideflow Rider App Events
+  target_layer: silver
+  description: Records of rider activity in the Rideflow app, capturing actions such
+    as opening a screen or requesting a ride along with the screen involved, the time,
+    the app version and platform, and the city or market the event belongs to. Each
+    event carries additional context stored as structured text, and some records include
+    personal data — the rider's device identifier and the network address they connected
+    from — that requires privacy care. Events can be linked to individual riders and
+    traced or de-duplicated by a unique event identifier.
+  table_name: '{silver_layer}_rideflow_rider_app_events'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: event_id
+    type: string
+    required: true
+    description: Unique identifier for a single rider app event, used to trace and
+      de-duplicate activity records.
+  - name: rider_id
+    type: string
+    required: true
+    description: Identifies the rider whose app activity was recorded, linking events
+      to a customer.
+  - name: device_id
+    type: string
+    required: false
+    pii: true
+    classification: device_id
+    description: Identifies the device the rider used; personal data that should be
+      handled with privacy care.
+  - name: ip_address
+    type: string
+    required: false
+    pii: true
+    classification: ip_address
+    description: The network address the rider connected from; personal data that
+      should be handled with privacy care.
+  - name: event_name
+    type: string
+    required: true
+    description: The type of action the rider took in the app, such as opening a screen
+      or requesting a ride.
+  - name: screen_name
+    type: string
+    required: true
+    description: The app screen where the event occurred, showing where riders spend
+      time in the app.
+  - name: event_timestamp
+    type: timestamp
+    required: false
+    description: When the event happened, used to order and analyse rider activity
+      over time.
+  - name: app_version
+    type: string
+    required: false
+    description: The version of the rider app in use, helping explain behaviour differences
+      across releases.
+  - name: platform
+    type: string
+    required: false
+    description: The device platform (such as iOS or Android) the rider used, supporting
+      platform-level analysis.
+  - name: city_code
+    type: string
+    required: false
+    description: The market or city the event is associated with, enabling regional
+      reporting.
+  - name: event_properties_json
+    type: string
+    required: false
+    description: Additional event details stored as structured text, holding context
+      specific to each event type.
+
+primary_key:
+- event_id
+
+quality:
+  row_rules:
+  - name: event_id_not_null
+    sql: event_id IS NOT NULL
+    category: completeness
+    description: event_id is always present (never null).
+  - name: event_name_not_null
+    sql: event_name IS NOT NULL
+    category: completeness
+    description: event_name is always present (never null).
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: screen_name_not_null
+    sql: screen_name IS NOT NULL
+    category: completeness
+    description: screen_name is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - event_id
+    sort_by:
+    - event_timestamp
+    order: desc
+
+dataset: silver_rideflow_rider_app_events
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_rideflow_rider_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

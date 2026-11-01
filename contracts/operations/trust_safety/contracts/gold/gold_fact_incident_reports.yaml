@@ -1,0 +1,139 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Incident Reports
+  target_layer: gold
+  description: 'grain: one row per trust and safety incident report'
+  table_name: '{gold_layer}_fact_incident_reports'
+  system: trust_safety
+  domain: operations
+
+model:
+  fields:
+  - name: incident_id
+    type: string
+    required: true
+    description: ID of the incident report.
+  - name: estimated_cost
+    type: double
+    required: false
+    description: 'Measure candidate: sum of ''estimated_cost'' (needs confirmation).'
+  - name: trip_id
+    type: string
+    required: false
+    description: Trip the incident relates to.
+  - name: incident_datetime
+    type: timestamp
+    required: false
+    description: When the incident happened.
+  - name: location
+    type: string
+    required: false
+    description: Where the incident happened, as reported.
+  - name: reported_by
+    type: string
+    required: false
+    description: Who reported the incident.
+  - name: what_happened
+    type: string
+    required: false
+    description: Free-text account of the incident from the report.
+  - name: driver_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_driver_profiles
+      column: driver_profiles_sk
+    description: Surrogate key of gold_dim_driver_profiles, looked up as of incident_datetime;
+      '-1' when the dimension does not know the row.
+  - name: incident_type_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_incident_type
+      column: incident_type_sk
+    description: Surrogate key of gold_dim_incident_type, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_incident_reports
+
+primary_key:
+- incident_id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - incident_id
+      name: incident_id_unique
+      category: uniqueness
+      description: No two rows share the same incident_id.
+  - name: driver_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE driver_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose driver_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: incident_type_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE incident_type_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose incident_type_sk fell back to the unknown member — the
+      dimension did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.incident_id,
+      r.trip_id,
+      r.incident_datetime,
+      r.location,
+      r.reported_by,
+      r.what_happened,
+      r.estimated_cost AS estimated_cost,
+      COALESCE(d1.driver_profiles_sk, '-1') AS driver_sk,
+      COALESCE(d2.incident_type_sk, '-1') AS incident_type_sk
+    FROM source r
+    LEFT JOIN gold_dim_driver_profiles d1
+      ON  r.driver_id = d1.driver_id
+      AND r.incident_datetime >= d1.effective_from
+      AND r.incident_datetime < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_incident_type d2
+      ON  r.incident_type = d2.incident_type
+- phase: pre
+  derive:
+    field: system
+    sql: '''trust_safety'''
+
+links:
+- name: gold_dim_driver_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_driver_profiles
+- name: gold_dim_incident_type
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_incident_type
+
+upstream:
+- gold_dim_driver_profiles
+- gold_dim_incident_type
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_trust_safety_incident_reports
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

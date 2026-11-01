@@ -1,0 +1,79 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Device Category
+  target_layer: gold
+  description: Device categories from Google Analytics, held as a small reference
+    dimension with a surrogate key and an unknown member for unmatched values. Each
+    row also records which source system it came from.
+  table_name: '{gold_layer}_dim_device_category'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: device_category_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: device_category
+    type: string
+    required: true
+    description: The type of device a visitor used, such as desktop, mobile, or tablet,
+      letting marketing teams compare behaviour and performance across devices.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_device_category
+
+primary_key:
+- device_category
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - device_category
+      name: device_category_unique
+      category: uniqueness
+      description: No two rows share the same device_category.
+
+materialization:
+  scd1:
+    surrogate_key: device_category_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+links:
+- name: silver_google_analytics_sessions
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_sessions
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT device_category
+    FROM (
+      SELECT device_category FROM source
+      UNION ALL
+      SELECT device_category FROM silver_google_analytics_sessions
+    ) codes
+    WHERE device_category IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''google_analytics'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

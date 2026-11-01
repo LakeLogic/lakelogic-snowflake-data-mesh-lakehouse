@@ -1,0 +1,87 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Dim Payment Method Seed
+  target_layer: silver
+  description: A reference list of payment methods, each identified by a short code
+    and a customer-facing name, with the payment channel or network it runs on such
+    as card, bank transfer or wallet. Each entry also records whether the method requires
+    extra customer verification, like a one-time code, before a payment can complete,
+    and whether its funds settle immediately or after a delay. The contract does not
+    state which internal system supplies the list or how it is maintained.
+  table_name: '{silver_layer}_internal_dim_payment_method_seed'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: payment_method_code
+    type: string
+    required: true
+    description: Short identifier for the payment method, used to reference it consistently
+      across systems and reports.
+  - name: payment_method_name
+    type: string
+    required: true
+    description: Human-readable name of the payment method as customers and staff
+      would recognise it.
+  - name: rail
+    type: string
+    required: true
+    description: The payment channel or network the method runs on, such as card,
+      bank transfer, or wallet.
+  - name: requires_strong_auth
+    type: boolean
+    required: true
+    description: Indicates whether this payment method needs extra customer verification
+      (such as a one-time code) before a payment can complete.
+  - name: settles_instantly
+    type: boolean
+    required: true
+    description: Indicates whether funds for this payment method are settled immediately
+      rather than after a delay.
+
+primary_key:
+- payment_method_code
+
+quality:
+  row_rules:
+  - name: payment_method_code_not_null
+    sql: payment_method_code IS NOT NULL
+    category: completeness
+    description: payment_method_code is always present (never null).
+  - name: payment_method_name_not_null
+    sql: payment_method_name IS NOT NULL
+    category: completeness
+    description: payment_method_name is always present (never null).
+  - name: rail_not_null
+    sql: rail IS NOT NULL
+    category: completeness
+    description: rail is always present (never null).
+  - name: requires_strong_auth_not_null
+    sql: requires_strong_auth IS NOT NULL
+    category: completeness
+    description: requires_strong_auth is always present (never null).
+  - name: settles_instantly_not_null
+    sql: settles_instantly IS NOT NULL
+    category: completeness
+    description: settles_instantly is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - payment_method_code
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+dataset: silver_internal_dim_payment_method_seed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_dim_payment_method_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,72 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Device Os
+  target_layer: gold
+  description: A reference list of device operating systems such as iOS, Android and
+    Windows, used to explain differences in visitor behaviour across device types.
+    Each entry carries a unique internal identifier for linking to related records,
+    with a special value marking where the operating system is unknown, and records
+    where the information came from.
+  table_name: '{gold_layer}_dim_device_os'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: device_os_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: device_os
+    type: string
+    required: true
+    description: The operating system of the device a visitor used, such as iOS, Android
+      or Windows, which helps explain differences in behaviour across device types.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_device_os
+
+primary_key:
+- device_os
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - device_os
+      name: device_os_unique
+      category: uniqueness
+      description: No two rows share the same device_os.
+
+materialization:
+  scd1:
+    surrogate_key: device_os_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT device_os
+    FROM source
+    WHERE device_os IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''google_analytics'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

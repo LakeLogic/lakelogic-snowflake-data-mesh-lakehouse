@@ -1,0 +1,71 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Direction
+  target_layer: gold
+  description: Call direction categories such as inbound or outbound, used to group
+    and compare call activity, with each record traceable to the source system that
+    supplied it. Records whose true direction is unknown are marked with a placeholder
+    value so they can still be linked to related facts.
+  table_name: '{gold_layer}_dim_direction'
+  system: twilio
+  domain: operations
+
+model:
+  fields:
+  - name: direction_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: direction
+    type: string
+    required: true
+    description: The call direction category, such as inbound or outbound, used to
+      group and compare call activity.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_direction
+
+primary_key:
+- direction
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - direction
+      name: direction_unique
+      category: uniqueness
+      description: No two rows share the same direction.
+
+materialization:
+  scd1:
+    surrogate_key: direction_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT direction
+    FROM source
+    WHERE direction IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''twilio'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_twilio_sms_logs
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

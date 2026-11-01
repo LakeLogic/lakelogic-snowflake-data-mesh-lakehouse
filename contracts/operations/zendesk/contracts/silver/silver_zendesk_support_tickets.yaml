@@ -1,0 +1,190 @@
+version: 1.0.0
+
+info:
+  title: Silver — Zendesk Support Tickets
+  target_layer: silver
+  description: Customer support tickets raised through Zendesk, capturing how each
+    case first reached the team, the issue itself, and its progress through open,
+    pending and solved stages, along with priority, channel, assigned agent and any
+    categorising labels. Tickets can be tied back to a specific rider, trip, driver
+    and charge, so billing and ride-related questions can be traced to the journey
+    that prompted them.
+  table_name: '{silver_layer}_zendesk_support_tickets'
+  system: zendesk
+  domain: operations
+
+model:
+  fields:
+  - name: ticket_id
+    type: string
+    required: true
+    description: Unique identifier for a customer support ticket. Used to track and
+      reference the case throughout its lifecycle.
+  - name: entry_point
+    type: string
+    required: false
+    description: The route or channel through which the support request first entered
+      the system, helping teams understand how customers reach out.
+  - name: rider_id
+    type: string
+    required: true
+    description: Identifier for the rider associated with the support case, linking
+      the ticket to a specific customer journey.
+  - name: trip_id
+    type: string
+    required: true
+    description: Identifier for the trip the support case relates to, allowing the
+      issue to be traced back to a specific ride.
+  - name: driver_id
+    type: string
+    required: true
+    description: Identifier for the driver involved in the support case, used to connect
+      the issue to the person who served the trip.
+  - name: charge_id
+    type: string
+    required: true
+    description: Identifier for the charge or payment associated with the support
+      case, useful for resolving billing-related questions.
+  - name: requester_email
+    type: string
+    required: false
+    pii: true
+    classification: email
+    description: Email address of the person who raised the ticket. Personal contact
+      data used to follow up with the customer.
+  - name: requester_name
+    type: string
+    required: false
+    description: Name of the person who raised the ticket, used to identify and personalize
+      communication with the customer.
+  - name: requester_phone
+    type: string
+    required: false
+    pii: true
+    classification: phone
+    description: Phone number of the person who raised the ticket. Personal contact
+      data used for direct follow-up.
+  - name: subject
+    type: string
+    required: false
+    description: Short summary line of the support ticket, giving a quick view of
+      what the customer's issue is about.
+  - name: ticket_description
+    type: string
+    required: false
+    description: Full text of the customer's request or issue, providing the detail
+      agents need to resolve the case.
+  - name: status
+    type: string
+    required: true
+    description: Current stage of the ticket in the support workflow (for example
+      open, pending, or solved), showing how far the case has progressed.
+  - name: priority
+    type: string
+    required: false
+    description: Urgency level assigned to the ticket, helping teams decide which
+      cases to handle first.
+  - name: channel
+    type: string
+    required: false
+    description: The medium through which the customer contacted support, such as
+      email, chat, or phone.
+  - name: assignee
+    type: string
+    required: false
+    description: The support agent or team currently responsible for handling the
+      ticket.
+  - name: tags_json
+    type: string
+    required: false
+    description: Labels attached to the ticket for categorizing and grouping similar
+      issues, stored as structured text.
+  - name: created_at
+    type: timestamp
+    required: true
+    description: Date and time the ticket was first raised, used to measure response
+      times and case age.
+  - name: updated_at
+    type: timestamp
+    required: false
+    description: Date and time the ticket was last changed, showing when the case
+      was most recently worked on.
+  - name: solved_at
+    type: timestamp
+    required: false
+    description: Date and time the ticket was marked as resolved, used to measure
+      how long cases take to close.
+  - name: satisfaction_rating
+    type: string
+    required: false
+    description: Customer satisfaction score given after the ticket was resolved,
+      reflecting how happy the customer was with the support received.
+
+primary_key:
+- ticket_id
+
+quality:
+  row_rules:
+  - name: ticket_id_not_null
+    sql: ticket_id IS NOT NULL
+    category: completeness
+    description: ticket_id is always present (never null).
+  - name: channel_accepted_values
+    sql: channel IS NULL OR channel IN ('direct', 'in-store', 'marketplace', 'mobile_app',
+      'online', 'partner', 'social', 'wholesale')
+    category: validity
+    description: 'channel is one of: direct, in-store, marketplace, mobile_app, online,
+      partner, social, wholesale when present.'
+  - name: charge_id_not_null
+    sql: charge_id IS NOT NULL
+    category: completeness
+    description: charge_id is always present (never null).
+  - name: created_at_not_null
+    sql: created_at IS NOT NULL
+    category: completeness
+    description: created_at is always present (never null).
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: priority_accepted_values
+    sql: priority IS NULL OR priority IN ('critical', 'high', 'low', 'medium')
+    category: validity
+    description: 'priority is one of: critical, high, low, medium when present.'
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+  - name: trip_id_not_null
+    sql: trip_id IS NOT NULL
+    category: completeness
+    description: trip_id is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - ticket_id
+    sort_by:
+    - updated_at
+    order: desc
+
+dataset: silver_zendesk_support_tickets
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_zendesk_support_tickets
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

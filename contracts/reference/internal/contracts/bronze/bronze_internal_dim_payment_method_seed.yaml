@@ -1,0 +1,47 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Payment Method Seed
+  target_layer: bronze
+  description: 'A reference list of the ways customers can pay, giving each method
+    a short code and the name customers and staff would recognise, along with the
+    channel or network it runs on, such as card, bank transfer or wallet. It also
+    records two flags per method: whether extra customer verification is needed before
+    a payment can complete, and whether funds settle immediately rather than after
+    a delay. The contract does not state which internal system supplies this list.'
+  table_name: '{bronze_layer}_internal_dim_payment_method_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: payment_method_code
+    type: string
+    description: Short identifier for the payment method, used to reference it consistently
+      across systems and reports.
+  - name: payment_method_name
+    type: string
+    description: Human-readable name of the payment method as customers and staff
+      would recognise it.
+  - name: rail
+    type: string
+    description: The payment channel or network the method runs on, such as card,
+      bank transfer, or wallet.
+  - name: requires_strong_auth
+    type: boolean
+    description: Indicates whether this payment method needs extra customer verification
+      (such as a one-time code) before a payment can complete.
+  - name: settles_instantly
+    type: boolean
+    description: Indicates whether funds for this payment method are settled immediately
+      rather than after a delay.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_payment_method_seed'
+  format: csv
+
+primary_key:
+- payment_method_code
+
+dataset: bronze_internal_dim_payment_method_seed

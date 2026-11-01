@@ -1,0 +1,71 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Salesforce Contacts
+  target_layer: bronze
+  table_name: '{bronze_layer}_salesforce_contacts'
+  domain: business
+  system: salesforce
+
+model:
+  fields:
+  - name: attributes
+    type: json
+    description: Salesforce API metadata for the record (object type and URL).
+  - name: Id
+    type: string
+    description: Salesforce record ID; unique per record.
+  - name: AccountId
+    type: string
+    description: Salesforce account the record belongs to.
+  - name: FirstName
+    type: string
+    description: Contact's first name.
+  - name: LastName
+    type: string
+    description: Contact's last name.
+  - name: Email
+    type: string
+    pii: true
+    classification: email
+    description: Contact's email address.
+  - name: Title
+    type: string
+    description: Contact's job title.
+  - name: Phone
+    type: string
+    pii: true
+    classification: phone
+    description: Contact's phone number.
+  - name: MailingCity
+    type: string
+    description: City of the contact's mailing address.
+  - name: CreatedDate
+    type: string
+    description: When the record was created in Salesforce.
+  - name: LastModifiedDate
+    type: string
+    description: When a user last changed the record in Salesforce.
+  - name: SystemModstamp
+    type: string
+    description: When the record was last changed by a user or by Salesforce itself.
+  - name: IsDeleted
+    type: boolean
+    description: Whether the record is in the Salesforce recycle bin.
+
+source:
+  type: landing
+  path: '{landing_root}/contacts'
+  format: json
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- Id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_salesforce_contacts

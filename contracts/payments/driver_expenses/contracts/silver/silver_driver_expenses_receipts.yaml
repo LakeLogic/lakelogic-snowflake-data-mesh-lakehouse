@@ -1,0 +1,94 @@
+version: 1.0.0
+
+info:
+  title: Silver — Driver Expenses Receipts
+  target_layer: silver
+  table_name: '{silver_layer}_driver_expenses_receipts'
+  system: driver_expenses
+  domain: payments
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    required: false
+    description: Path of the source document in the landing volume.
+  - name: merchant
+    type: string
+    required: false
+    description: Merchant named on the receipt.
+  - name: branch_city_code
+    type: string
+    required: false
+    description: City code of the merchant branch on the receipt.
+  - name: receipt_date
+    type: date
+    required: false
+    description: Date printed on the receipt.
+  - name: receipt_time
+    type: timestamp
+    required: false
+    description: Date and time printed on the receipt.
+  - name: receipt_number
+    type: string
+    required: false
+    description: Receipt number printed by the merchant.
+  - name: service
+    type: string
+    required: false
+    description: Service the receipt is for.
+  - name: total_amount
+    type: decimal(10,2)
+    required: false
+    description: Total amount on the receipt, including VAT.
+  - name: vat_amount
+    type: decimal(10,2)
+    required: false
+    description: VAT amount on the receipt.
+  - name: card_last4
+    type: string
+    required: false
+    sensitive: true
+    classification: financial_account
+    description: Last four digits of the payment card on the receipt.
+  - name: driver_id
+    type: string
+    required: true
+    description: RideFlow driver the record belongs to.
+
+materialization:
+  strategy: overwrite
+
+quality:
+  row_rules:
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: total_amount_range_min
+    sql: total_amount IS NULL OR total_amount >= 0
+    category: validity
+    description: total_amount is at least 0 when present.
+  - name: total_amount_range_max
+    sql: total_amount IS NULL OR total_amount <= 1000000
+    category: validity
+    description: total_amount is at most 1000000 when present.
+  - name: vat_amount_range_min
+    sql: vat_amount IS NULL OR vat_amount >= 0
+    category: validity
+    description: vat_amount is at least 0 when present.
+  - name: vat_amount_range_max
+    sql: vat_amount IS NULL OR vat_amount <= 1000000
+    category: validity
+    description: vat_amount is at most 1000000 when present.
+
+dataset: silver_driver_expenses_receipts
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_driver_expenses_receipts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

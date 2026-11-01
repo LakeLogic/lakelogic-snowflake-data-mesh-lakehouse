@@ -1,0 +1,68 @@
+version: 1.0.0
+
+info:
+  title: Silver — Onboarding Driving Licences
+  target_layer: silver
+  table_name: '{silver_layer}_onboarding_driving_licences'
+  system: onboarding
+  domain: operations
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    required: false
+    description: Path of the source document in the landing volume.
+  - name: licence_no
+    type: string
+    required: false
+    pii: true
+    classification: licence_id
+    description: Driving licence number as printed on the document.
+  - name: driver_id
+    type: string
+    required: true
+    description: RideFlow driver the record belongs to.
+  - name: holder_name
+    type: string
+    required: false
+    description: Name of the licence holder as printed on the document.
+  - name: date_of_birth
+    type: string
+    required: false
+    pii: true
+    classification: date_of_birth
+    description: Holder's date of birth as printed on the document.
+  - name: expiry_date
+    type: date
+    required: false
+    description: Date the licence expires.
+  - name: licence_class
+    type: string
+    required: false
+    description: Vehicle class the licence covers.
+  - name: issuing_city
+    type: string
+    required: false
+    description: City that issued the licence.
+
+materialization:
+  strategy: overwrite
+
+quality:
+  row_rules:
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+
+dataset: silver_onboarding_driving_licences
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_onboarding_driving_licences
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

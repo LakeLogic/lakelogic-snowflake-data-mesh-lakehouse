@@ -1,0 +1,163 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Charges
+  target_layer: gold
+  description: Payment charges recorded in the Stripe payment system, each traceable
+    by a unique charge identifier and carrying the amount billed to the customer in
+    the transaction's currency. Charges link back to the trip they paid for and to
+    internal references for the rider, currency, payment method and charge status,
+    with a placeholder value marking any that could not be matched to a known record.
+    Records also carry the date and time the charge was created, supporting day-level
+    and time-based reporting on payment activity.
+  table_name: '{gold_layer}_fact_charges'
+  system: stripe
+  domain: payments
+
+model:
+  fields:
+  - name: charge_id
+    type: string
+    required: true
+    description: Unique identifier for this payment charge. Used to trace and reconcile
+      an individual payment across systems.
+  - name: charge_amount
+    type: decimal(10,2)
+    required: false
+    description: The amount charged to the customer for this transaction, in the transaction's
+      currency.
+  - name: trip_id
+    type: string
+    required: false
+    description: Identifies the trip this payment relates to, allowing payments to
+      be matched to the ride they paid for.
+  - name: created_at
+    type: timestamp
+    required: false
+    description: When the charge was created in the payment system. Used for time-based
+      reporting and trend analysis.
+  - name: rider_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_rider_profiles
+      column: rider_profiles_sk
+    description: Surrogate key of gold_dim_rider_profiles, looked up as of created_at;
+      '-1' when the dimension does not know the row.
+  - name: currency_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_currency
+      column: currency_sk
+    description: Surrogate key of gold_dim_currency, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: payment_method_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_payment_method
+      column: payment_method_sk
+    description: Surrogate key of gold_dim_payment_method, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: created_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `created_at`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_charges
+
+primary_key:
+- charge_id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - charge_id
+      name: charge_id_unique
+      category: uniqueness
+      description: No two rows share the same charge_id.
+  - name: rider_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE rider_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose rider_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: currency_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE currency_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose currency_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: payment_method_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE payment_method_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose payment_method_sk fell back to the unknown member — the
+      dimension did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.charge_id,
+      r.trip_id,
+      r.created_at,
+      r.amount AS charge_amount,
+      COALESCE(d1.rider_profiles_sk, '-1') AS rider_sk,
+      COALESCE(d2.currency_sk, '-1') AS currency_sk,
+      COALESCE(d3.payment_method_sk, '-1') AS payment_method_sk,
+      CAST(r.created_at AS DATE) AS created_date
+    FROM source r
+    LEFT JOIN gold_dim_rider_profiles d1
+      ON  r.rider_id = d1.rider_id
+      AND r.created_at >= d1.effective_from
+      AND r.created_at < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_currency d2
+      ON  r.currency = d2.currency_code
+    LEFT JOIN gold_dim_payment_method d3
+      ON  r.payment_method_type = d3.payment_method_code
+- phase: pre
+  derive:
+    field: system
+    sql: '''stripe'''
+
+links:
+- name: gold_dim_rider_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_rider_profiles
+- name: gold_dim_currency
+  type: table
+  path: table:`{domain_catalog_prefix}_reference`.{gold_layer}.{gold_layer}_dim_currency
+- name: gold_dim_payment_method
+  type: table
+  path: table:`{domain_catalog_prefix}_reference`.{gold_layer}.{gold_layer}_dim_payment_method
+
+upstream:
+- gold_dim_currency
+- gold_dim_payment_method
+- gold_dim_rider_profiles
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+  partition_by:
+  - created_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_stripe_charges
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

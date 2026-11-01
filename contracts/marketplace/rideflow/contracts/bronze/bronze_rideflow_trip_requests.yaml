@@ -1,0 +1,87 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Rideflow Trip Requests
+  target_layer: bronze
+  description: Ride requests placed by riders in the Rideflow marketplace, capturing
+    the rider, the requested service category, and the pickup and drop-off coordinates
+    as sensitive location data. Each record carries the city, the request timestamp,
+    the estimated fare and arrival time, and any surge multiplier applied. It originates
+    from the Rideflow marketplace system as raw bronze data.
+  table_name: '{bronze_layer}_rideflow_trip_requests'
+  domain: marketplace
+  system: rideflow
+
+model:
+  fields:
+  - name: request_id
+    type: string
+    description: Unique identifier for each ride request made by a rider. Used to
+      track and reference individual trips.
+  - name: rider_id
+    type: string
+    description: Identifier for the rider who requested the trip. Links the request
+      to a specific customer for history and personalization.
+  - name: trip_type
+    type: string
+    description: Category of the ride requested, such as standard, premium, or shared.
+      Helps understand demand patterns and service mix.
+  - name: pickup_lat
+    type: string
+    pii: true
+    classification: gps_coordinate
+    description: Latitude coordinate of where the rider was picked up. Sensitive location
+      data used for routing and trip analysis.
+  - name: pickup_lng
+    type: string
+    pii: true
+    classification: gps_coordinate
+    description: Longitude coordinate of where the rider was picked up. Sensitive
+      location data used for routing and trip analysis.
+  - name: dropoff_lat
+    type: string
+    pii: true
+    classification: gps_coordinate
+    description: Latitude coordinate of the trip's destination. Sensitive location
+      data used for routing and trip analysis.
+  - name: dropoff_lng
+    type: string
+    pii: true
+    classification: gps_coordinate
+    description: Longitude coordinate of the trip's destination. Sensitive location
+      data used for routing and trip analysis.
+  - name: city_code
+    type: string
+    description: Short code representing the city where the trip took place. Used
+      for regional reporting and market analysis.
+  - name: requested_at
+    type: string
+    description: Date and time when the rider requested the trip. Important for demand
+      analysis and time-based reporting.
+  - name: estimated_fare
+    type: string
+    description: Estimated cost of the trip at the time of request. Used for pricing
+      analysis and revenue forecasting.
+  - name: estimated_eta_minutes
+    type: string
+    description: Estimated time in minutes until the driver arrives at pickup. Reflects
+      service speed and rider experience.
+  - name: surge_multiplier
+    type: string
+    description: Factor by which the fare was increased due to high demand. Indicates
+      pricing dynamics and market conditions.
+
+source:
+  type: stream
+  path: '{landing_root}/trip_requests'
+  format: csv
+  options:
+    kind: files
+    checkpoint: '{log_root}/_checkpoints/trip_requests'
+    trigger: available_now
+    header: true
+
+primary_key:
+- request_id
+
+dataset: bronze_rideflow_trip_requests

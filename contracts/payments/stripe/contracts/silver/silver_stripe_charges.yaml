@@ -1,0 +1,155 @@
+version: 1.0.0
+
+info:
+  title: Silver — Stripe Charges
+  target_layer: silver
+  description: Payment charges sourced from Stripe, each carrying a monetary amount
+    and currency so revenue can be reconciled across markets, along with a status
+    showing whether funds were actually collected and the type of payment method used.
+    Charges link to the rider and trip they paid for, and include sensitive card details
+    plus the customer's billing email and postal address, which are flagged as personal
+    and financial data to be masked. Free-form metadata is attached at source and
+    varies in content.
+  table_name: '{silver_layer}_stripe_charges'
+  system: stripe
+  domain: payments
+
+model:
+  fields:
+  - name: charge_id
+    type: string
+    required: true
+    description: Unique identifier for this payment charge. Used to trace and reconcile
+      an individual payment across systems.
+  - name: rider_id
+    type: string
+    required: true
+    description: Identifies the rider associated with this payment, linking the charge
+      to the customer who made the trip.
+  - name: trip_id
+    type: string
+    required: true
+    description: Identifies the trip this payment relates to, allowing payments to
+      be matched to the ride they paid for.
+  - name: amount
+    type: decimal(10,2)
+    required: false
+    description: The monetary value of the charge in the transaction currency. Core
+      figure for revenue and reconciliation reporting.
+  - name: currency
+    type: string
+    required: false
+    description: The currency in which the charge amount is denominated. Needed to
+      interpret amounts correctly across markets.
+  - name: status
+    type: string
+    required: true
+    description: Current state of the payment (for example succeeded, pending or failed).
+      Indicates whether funds were actually collected.
+  - name: payment_method_type
+    type: string
+    required: false
+    description: The kind of payment method used, such as card or wallet. Helps analyse
+      customer payment preferences.
+  - name: card_last_four
+    type: string
+    required: false
+    sensitive: true
+    classification: financial_account
+    description: The last four digits of the card used for payment. Sensitive financial
+      detail used for support and dispute checks; should be restricted and masked.
+  - name: billing_email
+    type: string
+    required: false
+    pii: true
+    classification: email
+    description: The customer's email address used for billing and receipts. Personal
+      data that should be protected and masked where possible.
+  - name: billing_address
+    type: string
+    required: false
+    pii: true
+    classification: postal_address
+    description: The customer's billing postal address. Personal data that should
+      be protected and masked where possible.
+  - name: created_at
+    type: timestamp
+    required: true
+    description: When the charge was created in the payment system. Used for time-based
+      reporting and trend analysis.
+  - name: metadata_json
+    type: string
+    required: false
+    description: Free-form additional details attached to the charge at source. Contents
+      vary and should be reviewed before relying on them.
+
+primary_key:
+- charge_id
+
+quality:
+  row_rules:
+  - name: charge_id_not_null
+    sql: charge_id IS NOT NULL
+    category: completeness
+    description: charge_id is always present (never null).
+  - name: amount_range_min
+    sql: amount IS NULL OR amount >= 0
+    category: validity
+    description: amount is at least 0 when present.
+  - name: amount_range_max
+    sql: amount IS NULL OR amount <= 1000000
+    category: validity
+    description: amount is at most 1000000 when present.
+  - name: created_at_not_null
+    sql: created_at IS NOT NULL
+    category: completeness
+    description: created_at is always present (never null).
+  - name: currency_accepted_values
+    sql: currency IS NULL OR currency IN ('AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP',
+      'JPY', 'USD')
+    category: validity
+    description: 'currency is one of: AUD, CAD, CHF, CNY, EUR, GBP, JPY, USD when
+      present.'
+  - name: payment_method_type_accepted_values
+    sql: payment_method_type IS NULL OR payment_method_type IN ('basic', 'enterprise',
+      'premium', 'pro', 'standard')
+    category: validity
+    description: 'payment_method_type is one of: basic, enterprise, premium, pro,
+      standard when present.'
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+  - name: trip_id_not_null
+    sql: trip_id IS NOT NULL
+    category: completeness
+    description: trip_id is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - charge_id
+    sort_by:
+    - created_at
+    order: desc
+
+dataset: silver_stripe_charges
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_stripe_charges
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

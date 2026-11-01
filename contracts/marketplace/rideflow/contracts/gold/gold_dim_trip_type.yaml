@@ -1,0 +1,68 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Trip Type
+  target_layer: gold
+  description: 'grain: one row per trip_type'
+  table_name: '{gold_layer}_dim_trip_type'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: trip_type_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: trip_type
+    type: string
+    required: true
+    description: Category of the ride requested, such as standard, premium, or shared.
+      Helps understand demand patterns and service mix.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_trip_type
+
+primary_key:
+- trip_type
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - trip_type
+      name: trip_type_unique
+      category: uniqueness
+      description: No two rows share the same trip_type.
+
+materialization:
+  scd1:
+    surrogate_key: trip_type_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT trip_type
+    FROM source
+    WHERE trip_type IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_trip_requests
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,156 @@
+version: 1.0.0
+
+info:
+  title: Silver — Google Analytics Sessions
+  target_layer: silver
+  description: Visits to the website are recorded one row per session, capturing when
+    the visit began, how long it lasted and how many pages were viewed, along with
+    the entry page and the referring site, channel and named campaign that brought
+    the visitor there. Each session carries an anonymised visitor identifier, a logged-in
+    customer identifier where the person was signed in, and the network address they
+    connected from, which is personal data. Device type and country of origin are
+    also recorded to show how and from where customers reach the site.
+  table_name: '{silver_layer}_google_analytics_sessions'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: session_id
+    type: string
+    required: true
+    description: Unique identifier for a single visit to the website; used to group
+      all activity that happened within one session.
+  - name: user_pseudo_id
+    type: string
+    required: true
+    description: An anonymised identifier for the visitor, letting us recognise repeat
+      visits from the same person without knowing who they are.
+  - name: user_id
+    type: string
+    required: false
+    description: The logged-in customer identifier when a visitor is signed in, linking
+      their website activity to their known account.
+  - name: ip_address
+    type: string
+    required: false
+    pii: true
+    classification: ip_address
+    description: The network address the visitor connected from, used for location
+      and fraud checks; this is personal data and should be handled with care.
+  - name: session_start
+    type: timestamp
+    required: false
+    description: The date and time the visit began, used to understand when and how
+      often customers engage with us.
+  - name: session_duration_seconds
+    type: integer
+    required: false
+    description: How long the visit lasted in seconds, a signal of how engaging the
+      experience was.
+  - name: page_views
+    type: integer
+    required: false
+    description: The number of pages the visitor looked at during the session, showing
+      depth of interest.
+  - name: traffic_source
+    type: string
+    required: false
+    description: The website or platform that referred the visitor, showing where
+      our audience comes from.
+  - name: traffic_medium
+    type: string
+    required: false
+    description: The channel type that brought the visitor (for example organic search,
+      paid ads or email), helping us judge which marketing channels work.
+  - name: traffic_campaign
+    type: string
+    required: false
+    description: The named marketing campaign that drove the visit, used to measure
+      campaign performance.
+  - name: device_category
+    type: string
+    required: false
+    description: The type of device used for the visit (such as desktop, mobile or
+      tablet), informing how customers reach us.
+  - name: geo_country
+    type: string
+    required: false
+    description: The country the visit came from, supporting regional analysis of
+      our audience.
+  - name: landing_page
+    type: string
+    required: false
+    description: The first page the visitor arrived on, showing which entry points
+      attract and hold attention.
+
+primary_key:
+- session_id
+
+quality:
+  row_rules:
+  - name: session_id_not_null
+    sql: session_id IS NOT NULL
+    category: completeness
+    description: session_id is always present (never null).
+  - name: device_category_accepted_values
+    sql: device_category IS NULL OR device_category IN ('Automotive', 'Books', 'Clothing',
+      'Electronics', 'Finance', 'Food', 'Health', 'Home', 'Sports', 'Travel')
+    category: validity
+    description: 'device_category is one of: Automotive, Books, Clothing, Electronics,
+      Finance, Food, Health, Home, Sports, Travel when present.'
+  - name: page_views_range_min
+    sql: page_views IS NULL OR page_views >= 0
+    category: validity
+    description: page_views is at least 0 when present.
+  - name: page_views_range_max
+    sql: page_views IS NULL OR page_views <= 100000
+    category: validity
+    description: page_views is at most 100000 when present.
+  - name: session_duration_seconds_range_min
+    sql: session_duration_seconds IS NULL OR session_duration_seconds >= 0
+    category: validity
+    description: session_duration_seconds is at least 0 when present.
+  - name: session_duration_seconds_range_max
+    sql: session_duration_seconds IS NULL OR session_duration_seconds <= 86400
+    category: validity
+    description: session_duration_seconds is at most 86400 when present.
+  - name: traffic_medium_accepted_values
+    sql: traffic_medium IS NULL OR traffic_medium IN ('affiliate', 'cpc', 'cpm', 'display',
+      'email', 'organic', 'social')
+    category: validity
+    description: 'traffic_medium is one of: affiliate, cpc, cpm, display, email, organic,
+      social when present.'
+  - name: traffic_source_accepted_values
+    sql: traffic_source IS NULL OR traffic_source IN ('direct', 'email', 'organic',
+      'paid', 'referral', 'social')
+    category: validity
+    description: 'traffic_source is one of: direct, email, organic, paid, referral,
+      social when present.'
+  - name: user_pseudo_id_not_null
+    sql: user_pseudo_id IS NOT NULL
+    category: completeness
+    description: user_pseudo_id is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - session_id
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+materialization:
+  partition_by:
+  - geo_country
+
+dataset: silver_google_analytics_sessions
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_google_analytics_sessions
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

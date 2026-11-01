@@ -1,0 +1,99 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Driver Expenses Receipts
+  target_layer: bronze
+  description: Receipt-level records of vehicle wash transactions, each traced back
+    to the source document it was extracted from. Individual receipts carry the customer's
+    name and vehicle registration plate alongside the vehicle's make, model and engine
+    size, the wash service provided, and the amount charged, with the date and time
+    of the wash as printed. Each entry is attributed to a driver by identifier so
+    the cost can be tied to the right person.
+  table_name: '{bronze_layer}_driver_expenses_receipts'
+  domain: payments
+  system: driver_expenses
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    description: The document this row was extracted from.
+  - name: merchant
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - \n([A-Z]+)\n[A-Z]{3} [a-z]+
+    description: Merchant name printed on its own line, e.g. SPARKLEWASH.
+  - name: branch_city_code
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - \n[A-Z]+\n([A-Z]{3}) [a-z]+
+    description: Three-letter branch city code, e.g. LON.
+  - name: receipt_date
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Date:\s*(\d{2}/\d{2}/\d{4})
+    description: Receipt date as printed (DD/MM/YYYY), kept as string.
+  - name: receipt_time
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Date:\s*\d{2}/\d{2}/\d{4}\s*(\d{2}:\d{2})
+    description: Receipt time as printed (HH:MM), kept as string.
+  - name: receipt_number
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Receipt:\s*([A-Z]\d{6})
+    description: Receipt number, letter R followed by six digits.
+  - name: service
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Receipt:\s*[A-Z]\d{6}\s*\n([^\n]+)
+    description: Service description, e.g. Exterior wash.
+  - name: total_amount
+    type: decimal
+    extraction_task: metadata
+    extraction_examples:
+    - TOTAL\s*GBP\s*(\d+\.\d{2})
+    description: Total amount after TOTAL GBP.
+  - name: vat_amount
+    type: decimal
+    extraction_task: metadata
+    extraction_examples:
+    - VAT\s*incl\.\s*GBP\s*(\d+\.\d{2})
+    description: VAT amount after VAT incl. GBP.
+  - name: card_last4
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Card\s*ending\s*(\d{4})
+    description: Last four digits of the card.
+    sensitive: true
+    classification: financial_account
+  - name: driver_id
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Driver\s*ID:\s*([A-Z]{3}-\d{4})
+    description: Driver identifier, e.g. DRI-1234.
+
+source:
+  type: landing
+  path: '{landing_root}/receipts/**/*.jpg'
+  format: image
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_driver_expenses_receipts
+
+extraction:
+  provider: document

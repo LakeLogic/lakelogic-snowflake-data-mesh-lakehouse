@@ -1,0 +1,97 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Dim Cancellation Reason Seed
+  target_layer: silver
+  description: A reference list of cancellation reason codes, each with a human-readable
+    label, the party responsible (such as customer, driver or platform), and flags
+    for whether a cancellation fee applies and whether the cancellation counts against
+    the driver's rating, plus a severity value used to prioritise follow-up. The codes
+    exist to link cancellations back to their explanation across systems, and the
+    fee and rating flags drive billing, customer communication and driver performance
+    scoring.
+  table_name: '{silver_layer}_internal_dim_cancellation_reason_seed'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: reason_code
+    type: string
+    required: true
+    description: The short code that uniquely identifies a cancellation reason, used
+      to link cancellations to their explanation across systems.
+  - name: reason_label
+    type: string
+    required: true
+    description: The human-readable name of the cancellation reason, shown to staff
+      and in reports.
+  - name: actor
+    type: string
+    required: true
+    description: The party responsible for the cancellation (for example the customer,
+      driver or platform), used to attribute and analyse cancellations.
+  - name: charge_cancellation_fee
+    type: decimal(18,2)
+    required: true
+    description: Whether a cancellation fee applies for this reason, which drives
+      billing and customer communication.
+  - name: counts_against_driver_rating
+    type: boolean
+    required: true
+    description: Whether this cancellation counts against the driver's rating, so
+      it affects driver performance scoring.
+  - name: severity
+    type: string
+    required: true
+    description: How serious this cancellation reason is, used to prioritise follow-up
+      and reporting.
+
+primary_key:
+- reason_code
+
+quality:
+  row_rules:
+  - name: reason_code_not_null
+    sql: reason_code IS NOT NULL
+    category: completeness
+    description: reason_code is always present (never null).
+  - name: actor_not_null
+    sql: actor IS NOT NULL
+    category: completeness
+    description: actor is always present (never null).
+  - name: charge_cancellation_fee_not_null
+    sql: charge_cancellation_fee IS NOT NULL
+    category: completeness
+    description: charge_cancellation_fee is always present (never null).
+  - name: counts_against_driver_rating_not_null
+    sql: counts_against_driver_rating IS NOT NULL
+    category: completeness
+    description: counts_against_driver_rating is always present (never null).
+  - name: reason_label_not_null
+    sql: reason_label IS NOT NULL
+    category: completeness
+    description: reason_label is always present (never null).
+  - name: severity_not_null
+    sql: severity IS NOT NULL
+    category: completeness
+    description: severity is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - reason_code
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+dataset: silver_internal_dim_cancellation_reason_seed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_dim_cancellation_reason_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

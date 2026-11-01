@@ -1,0 +1,26 @@
+{
+  "compute_pool": "RIDEFLOW_POOL",
+  "database": "RIDEFLOW_DEV",
+  "environments": {
+    "dev": {
+      "compute_pool": "RIDEFLOW_POOL",
+      "database": "RIDEFLOW_DEV",
+      "git_api_integration": "GIT_API_RIDEFLOW",
+      "git_repository": "RIDEFLOW_REPO",
+      "lakelogic_version": "1.88.0",
+      "lakelogic_wheel": "",
+      "landing_root": "@RIDEFLOW_DEV_{domain}.FILES.LANDING/{system}",
+      "log_root": "@RIDEFLOW_DEV.\"pipeline\".\"lakelogic_logs\"",
+      "secret": "",
+      "warehouse": "RIDEFLOW_WH"
+    }
+  },
+  "git_api_integration": "GIT_API_RIDEFLOW",
+  "git_repository": "RIDEFLOW_REPO",
+  "lakelogic_version": "1.88.0",
+  "lakelogic_wheel": "",
+  "landing_root": "@RIDEFLOW_DEV_{domain}.FILES.LANDING/{system}",
+  "log_root": "@RIDEFLOW_DEV.\"pipeline\".\"lakelogic_logs\"",
+  "secret": "",
+  "warehouse": "RIDEFLOW_WH"
+}

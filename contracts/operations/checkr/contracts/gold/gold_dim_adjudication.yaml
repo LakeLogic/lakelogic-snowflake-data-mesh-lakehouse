@@ -1,0 +1,68 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Adjudication
+  target_layer: gold
+  description: 'grain: one row per adjudication'
+  table_name: '{gold_layer}_dim_adjudication'
+  system: checkr
+  domain: operations
+
+model:
+  fields:
+  - name: adjudication_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: adjudication
+    type: string
+    required: true
+    description: The final hiring decision based on the background check results,
+      showing whether the person was cleared, flagged, or requires review.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_adjudication
+
+primary_key:
+- adjudication
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - adjudication
+      name: adjudication_unique
+      category: uniqueness
+      description: No two rows share the same adjudication.
+
+materialization:
+  scd1:
+    surrogate_key: adjudication_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT adjudication
+    FROM source
+    WHERE adjudication IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''checkr'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_checkr_background_checks
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

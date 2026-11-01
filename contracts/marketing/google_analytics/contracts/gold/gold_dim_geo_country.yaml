@@ -1,0 +1,77 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Geo Country
+  target_layer: gold
+  description: 'grain: one row per geo_country'
+  table_name: '{gold_layer}_dim_geo_country'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: geo_country_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: geo_country
+    type: string
+    required: true
+    description: The country the user was in when the event happened. Supports regional
+      reporting and market analysis.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_geo_country
+
+primary_key:
+- geo_country
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - geo_country
+      name: geo_country_unique
+      category: uniqueness
+      description: No two rows share the same geo_country.
+
+materialization:
+  scd1:
+    surrogate_key: geo_country_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+links:
+- name: silver_google_analytics_sessions
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_sessions
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT geo_country
+    FROM (
+      SELECT geo_country FROM source
+      UNION ALL
+      SELECT geo_country FROM silver_google_analytics_sessions
+    ) codes
+    WHERE geo_country IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''google_analytics'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

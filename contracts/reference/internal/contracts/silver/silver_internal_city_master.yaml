@@ -1,0 +1,100 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal City Master
+  target_layer: silver
+  description: 'A reference list of cities used across internal systems, each identified
+    by a short code paired with its country code so city details can be linked to
+    other records and grouped for regional reporting. Alongside the display name sit
+    the practical details for running business in a place: its standard time zone,
+    the currency normally used there, and a geographic boundary used to tell whether
+    a location falls inside the city area. Records also carry the dates a market opened
+    and, where applicable, closed, so current reporting can exclude cities no longer
+    active.'
+  table_name: '{silver_layer}_internal_city_master'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: city_code
+    type: string
+    required: true
+    description: The short code that identifies this city in internal systems; used
+      to link city details to other records.
+  - name: city_name
+    type: string
+    required: true
+    description: The display name of the city as it should appear to business users
+      and reports.
+  - name: country_code
+    type: string
+    required: false
+    description: The code for the country this city belongs to, used for grouping
+      and regional reporting.
+  - name: timezone
+    type: string
+    required: false
+    description: The standard time zone for the city, used to schedule activities
+      and interpret timestamps correctly.
+  - name: default_currency
+    type: string
+    required: true
+    description: The currency normally used for business in this city, useful for
+      pricing and financial reporting.
+  - name: geofence_wkt
+    type: string
+    required: false
+    description: The geographic boundary of the city, used to determine whether a
+      location falls inside the city area.
+  - name: launched_at
+    type: timestamp
+    required: false
+    description: The date the city became active for business; helps track when a
+      market opened.
+  - name: sunset_at
+    type: timestamp
+    required: false
+    description: The date the city stopped being active for business, if applicable;
+      used to exclude closed markets from current reporting.
+
+primary_key:
+- city_code
+
+quality:
+  row_rules:
+  - name: city_code_not_null
+    sql: city_code IS NOT NULL
+    category: completeness
+    description: city_code is always present (never null).
+  - name: city_name_not_null
+    sql: city_name IS NOT NULL
+    category: completeness
+    description: city_name is always present (never null).
+  - name: default_currency_not_null
+    sql: default_currency IS NOT NULL
+    category: completeness
+    description: default_currency is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - city_code
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+materialization:
+  partition_by:
+  - country_code
+
+dataset: silver_internal_city_master
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_city_master
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

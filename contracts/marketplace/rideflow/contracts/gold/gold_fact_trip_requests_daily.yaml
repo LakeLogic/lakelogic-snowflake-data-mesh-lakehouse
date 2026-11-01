@@ -1,0 +1,109 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Trip Requests Daily
+  target_layer: gold
+  description: Daily trip-request figures for the ride-hailing marketplace, summarising
+    each calendar day's quoted fares, average pickup wait times and average surge
+    pricing so demand against supply can be tracked. The figures are reported from
+    a named source platform, and a numeric day label links each summary to the shared
+    reporting calendar.
+  table_name: '{gold_layer}_fact_trip_requests_daily'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: activity_date
+    type: date
+    required: true
+    description: The calendar day this trip-request summary covers; every figure in
+      the row is for this single day.
+  - name: estimated_fare_total
+    type: decimal(10,2)
+    required: false
+    description: Sum of the estimated fares quoted for the requests.
+  - name: avg_estimated_eta_minutes
+    type: float
+    required: false
+    description: Average estimated time to pickup, in minutes.
+  - name: avg_surge_multiplier
+    type: float
+    required: false
+    description: Average surge multiplier applied to the requests.
+  - name: date_key
+    type: integer
+    required: false
+    foreign_key:
+      contract: gold_dim_date
+      column: date_key
+    description: The day of activity_date as YYYYMMDD — the key of the date dimension.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_trip_requests_daily
+
+primary_key:
+- activity_date
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - activity_date
+      name: activity_date_unique
+      category: uniqueness
+      description: No two rows share the same activity_date.
+
+transformations:
+- phase: pre
+  sql: |-
+    WITH touched AS (
+      SELECT DISTINCT
+        CAST(requested_at AS DATE) AS _touched_0
+      FROM source
+    ),
+    r AS (
+      SELECT
+        CAST(requested_at AS DATE) AS activity_date,
+        SUM(estimated_fare) AS estimated_fare_total,
+        AVG(estimated_eta_minutes) AS avg_estimated_eta_minutes,
+        AVG(surge_multiplier) AS avg_surge_multiplier
+      FROM silver_rideflow_trip_requests_full
+      JOIN touched
+        ON CAST(requested_at AS DATE) = touched._touched_0
+      GROUP BY CAST(requested_at AS DATE)
+    )
+    SELECT
+      r.activity_date,
+      r.estimated_fare_total,
+      r.avg_estimated_eta_minutes,
+      r.avg_surge_multiplier,
+      CAST(EXTRACT(YEAR FROM r.activity_date) AS BIGINT) * 10000 + CAST(EXTRACT(MONTH FROM r.activity_date) AS BIGINT) * 100 + CAST(EXTRACT(DAY FROM r.activity_date) AS BIGINT) AS date_key
+    FROM r
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+links:
+- name: silver_rideflow_trip_requests_full
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_trip_requests
+
+upstream: []
+
+materialization:
+  fact:
+    type: aggregate
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_trip_requests
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

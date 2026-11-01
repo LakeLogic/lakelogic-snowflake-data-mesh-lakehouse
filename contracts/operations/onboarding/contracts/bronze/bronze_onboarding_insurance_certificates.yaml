@@ -1,0 +1,85 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Onboarding Insurance Certificates
+  target_layer: bronze
+  description: Insurance certificates captured during onboarding, each row traceable
+    back to the source document it was extracted from. Records identify the policy,
+    the policyholder, the named driver and the insured vehicle by registration plate,
+    with the cover period and permitted use as printed on the certificate. Personal
+    names and vehicle identifiers are present, so the content includes personal data.
+  table_name: '{bronze_layer}_onboarding_insurance_certificates'
+  domain: operations
+  system: onboarding
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    description: The document this row was extracted from.
+  - name: policy_reference
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (FMC-\d{8})
+    description: Policy reference in the form FMC- followed by 8 digits, matched by
+      shape anywhere in the text.
+  - name: driver_id
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (DRI-\d+)
+    description: Driver ID in the form DRI- followed by digits, matched by shape anywhere
+      in the text.
+  - name: registration_mark
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - ([A-Z]{2}\d{2}\s?[A-Z]{3})
+    description: 'UK registration plate: two uppercase letters, two digits, optional
+      space, three uppercase letters.'
+  - name: cover_start
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (\d{1,2}\s*(?:January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{4})
+    description: First date written like '01 December 2024' (spaces may be missing);
+      kept as string since not ISO.
+  - name: cover_end
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - \d{1,2}\s*(?:January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{4}[\s\S]*?(\d{1,2}\s*(?:January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{4})
+    description: Second date written like '01 December 2024' (spaces may be missing);
+      kept as string since not ISO.
+  - name: policyholder_name
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (?m)^(?!Policy|Driver|Registration|Cover|Use|Hire|SPECIMEN|FABRIKAM|Motor|This)([A-Z][a-z]+
+      ?[A-Z][a-z]+)$
+    description: Person name of two capitalised words that is not a label; may appear
+      before or after the Policyholder label.
+  - name: use
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (Hire and reward[^\n]*)
+    description: Text starting 'Hire and reward' describing the vehicle use.
+
+source:
+  type: landing
+  path: '{landing_root}/insurance_certificates/**/*.pdf'
+  format: pdf
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_onboarding_insurance_certificates
+
+extraction:
+  provider: document

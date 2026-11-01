@@ -1,0 +1,89 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Stripe Charges
+  target_layer: bronze
+  description: Individual payment charges from Stripe, each carrying the amount and
+    currency of a transaction and its current state — succeeded, pending or failed
+    — so revenue and reconciliation reporting can tell whether funds were actually
+    collected. Charges link to the rider and the trip they paid for, and record the
+    payment method type, with card last four digits, billing email and billing address
+    held as sensitive personal and financial detail. Free-form metadata is attached
+    at source and varies in content.
+  table_name: '{bronze_layer}_stripe_charges'
+  domain: payments
+  system: stripe
+
+model:
+  fields:
+  - name: charge_id
+    type: string
+    description: Unique identifier for this payment charge. Used to trace and reconcile
+      an individual payment across systems.
+  - name: rider_id
+    type: string
+    description: Identifies the rider associated with this payment, linking the charge
+      to the customer who made the trip.
+  - name: trip_id
+    type: string
+    description: Identifies the trip this payment relates to, allowing payments to
+      be matched to the ride they paid for.
+  - name: amount
+    type: Float64
+    description: The monetary value of the charge in the transaction currency. Core
+      figure for revenue and reconciliation reporting.
+  - name: currency
+    type: string
+    description: The currency in which the charge amount is denominated. Needed to
+      interpret amounts correctly across markets.
+  - name: status
+    type: string
+    description: Current state of the payment (for example succeeded, pending or failed).
+      Indicates whether funds were actually collected.
+  - name: payment_method_type
+    type: string
+    description: The kind of payment method used, such as card or wallet. Helps analyse
+      customer payment preferences.
+  - name: card_last_four
+    type: string
+    sensitive: true
+    classification: financial_account
+    description: The last four digits of the card used for payment. Sensitive financial
+      detail used for support and dispute checks; should be restricted and masked.
+  - name: billing_email
+    type: string
+    pii: true
+    classification: email
+    description: The customer's email address used for billing and receipts. Personal
+      data that should be protected and masked where possible.
+  - name: billing_address
+    type: string
+    pii: true
+    classification: postal_address
+    description: The customer's billing postal address. Personal data that should
+      be protected and masked where possible.
+  - name: created_at
+    type: string
+    description: When the charge was created in the payment system. Used for time-based
+      reporting and trend analysis.
+  - name: metadata_json
+    type: string
+    description: Free-form additional details attached to the charge at source. Contents
+      vary and should be reviewed before relying on them.
+
+source:
+  type: landing
+  path: '{landing_root}/charges'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- charge_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_stripe_charges

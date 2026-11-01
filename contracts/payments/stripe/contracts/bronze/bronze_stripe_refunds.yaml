@@ -1,0 +1,70 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Stripe Refunds
+  target_layer: bronze
+  description: Refunds issued against customer payments, each tied back to the original
+    charge and to the rider whose payment was returned, so customer-level refund analysis
+    is possible. The records carry the refunded amount and its currency, the refund's
+    current state, and the reasons recorded for why the money went back, with two
+    separate reason fields whose difference is not yet confirmed. Refund timestamps
+    are held as text, so the date format needs checking before any time-based reporting.
+  table_name: '{bronze_layer}_stripe_refunds'
+  domain: payments
+  system: stripe
+
+model:
+  fields:
+  - name: refund_id
+    type: string
+    description: Unique identifier for this refund. Used to trace and reconcile individual
+      refunds across systems.
+  - name: charge_id
+    type: string
+    description: The original payment charge that this refund was issued against,
+      linking the refund back to the customer's payment.
+  - name: rider_id
+    type: string
+    description: The rider associated with the refunded payment, useful for customer-level
+      refund analysis.
+  - name: amount
+    type: Float64
+    description: 'The monetary value refunded to the customer. Note: confirm the currency
+      and whether this is a major or minor unit before reporting totals.'
+  - name: currency
+    type: string
+    description: The currency in which the refund was issued, needed to interpret
+      the amount correctly.
+  - name: status
+    type: string
+    description: The current state of the refund (for example pending, succeeded or
+      failed), indicating whether the money has been returned.
+  - name: reason
+    type: string
+    description: The reason recorded for the refund, helping teams understand why
+      money was returned.
+  - name: refund_reason
+    type: string
+    description: An additional or alternate reason field for the refund. Confirm with
+      the source owner how it differs from 'reason' before relying on either.
+  - name: created_at
+    type: string
+    description: When the refund was created. Stored as text, so confirm the date
+      format before using it in time-based reporting.
+
+source:
+  type: landing
+  path: '{landing_root}/refunds'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- refund_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_stripe_refunds

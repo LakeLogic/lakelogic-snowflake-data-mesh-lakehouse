@@ -1,0 +1,47 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Vehicle Type Seed
+  target_layer: bronze
+  description: A reference list of vehicle types, each identified by a short code
+    and a human-readable name shown to staff and customers when describing a vehicle
+    category. Alongside each type sit the passenger capacity it is designed to carry,
+    the product or service tier it belongs to, and a flag for whether it must pass
+    an inspection before use. The records come from an internal seed source and are
+    held as found at the bronze layer.
+  table_name: '{bronze_layer}_internal_dim_vehicle_type_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: vehicle_type_code
+    type: string
+    description: Short code that uniquely identifies each vehicle type in the reference
+      list, used to link vehicle records to their type.
+  - name: vehicle_type_name
+    type: string
+    description: The human-readable name of the vehicle type, shown to staff and customers
+      when describing a vehicle category.
+  - name: passenger_capacity
+    type: Int64
+    description: The number of passengers the vehicle type is designed to carry, used
+      for capacity planning and booking rules.
+  - name: product_tier
+    type: string
+    description: The product or service tier this vehicle type belongs to, indicating
+      the level of offering it represents.
+  - name: requires_inspection
+    type: boolean
+    description: Whether this vehicle type must pass an inspection before use, flagging
+      types that carry extra compliance obligations.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_vehicle_type_seed'
+  format: csv
+
+primary_key:
+- vehicle_type_code
+
+dataset: bronze_internal_dim_vehicle_type_seed

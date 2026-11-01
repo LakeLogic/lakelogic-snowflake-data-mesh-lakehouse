@@ -1,0 +1,91 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Onboarding Driving Licences
+  target_layer: bronze
+  description: Driving licence records captured during driver onboarding, holding
+    each holder's licence number, full name and date of birth alongside the licence
+    class, expiry date and issuing city, so licences can be matched to drivers and
+    checked for renewal and compliance. Each record also carries the path of the source
+    document it was extracted from, allowing every entry to be traced back to its
+    original licence file, and an internal driver identifier linking it to the driver's
+    other onboarding records. The licence number, name and date of birth are personal
+    data.
+  table_name: '{bronze_layer}_onboarding_driving_licences'
+  domain: operations
+  system: onboarding
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    description: The document this row was extracted from.
+  - name: licence_no
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - ([A-Z]{3}\d{6}[A-Z])
+    description: Licence number in the shape RFL + 6 digits + 1 letter, matched anywhere
+      in the text.
+    pii: true
+    classification: licence_id
+  - name: driver_id
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - ([A-Z]{3}-\d{4})
+    description: Driver ID in the shape DRI- followed by digits, matched anywhere
+      in the text.
+  - name: holder_name
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (?m)^(?!Licence|Date|Issuing|Driver|Expires|Name|Class|PHOTO|SPECIMEN|RIDEFLOW)([A-Z][a-z]+
+      ?[A-Z][a-z]+)$
+    description: Person name as two capitalised words, possibly joined, matched anywhere
+      in the text.
+  - name: date_of_birth
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (\d{2}/\d{2}/\d{4})(?=[\s\S]*\d{2}/\d{2}/\d{4})
+    description: The earlier dd/mm/yyyy date on the document, i.e. the date of birth.
+    pii: true
+    classification: date_of_birth
+  - name: expiry_date
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - \d{2}/\d{2}/\d{4}[\s\S]*?(\d{2}/\d{2}/\d{4})
+    description: The later dd/mm/yyyy date on the document, i.e. the expiry date.
+  - name: licence_class
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (?m)^([BCD]1?E?)$
+    description: Licence class as a letter with optional digit (e.g. C1 or B), matched
+      anywhere in the text.
+  - name: issuing_city
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - (?:Issuing\s*city:\s*\n?)?^([A-Z]{3})$
+    description: Three-letter uppercase city code on its own line, matched anywhere
+      in the text.
+
+source:
+  type: landing
+  path: '{landing_root}/driving_licences/**/*.jpg'
+  format: image
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_onboarding_driving_licences
+
+extraction:
+  provider: document

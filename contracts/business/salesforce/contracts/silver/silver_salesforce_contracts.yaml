@@ -1,0 +1,96 @@
+version: 1.0.0
+
+info:
+  title: Silver — Salesforce Contracts
+  target_layer: silver
+  table_name: '{silver_layer}_salesforce_contracts'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: attributes
+    type: json
+    required: false
+    description: Salesforce API metadata for the record (object type and URL).
+  - name: Id
+    type: string
+    required: true
+    description: Salesforce record ID; unique per record.
+  - name: AccountId
+    type: string
+    required: false
+    description: Salesforce account the record belongs to.
+  - name: ContractNumber
+    type: string
+    required: false
+    description: Contract number shown to users in Salesforce.
+  - name: Status
+    type: string
+    required: true
+    description: Status of the case or contract.
+  - name: StartDate
+    type: date
+    required: false
+    description: Date the contract starts.
+  - name: ContractTerm
+    type: Int64
+    required: false
+    description: Contract length in months.
+  - name: EndDate
+    type: date
+    required: false
+    description: Date the contract ends.
+  - name: RideFlow_Monthly_Commit__c
+    type: Float64
+    required: false
+    description: Monthly spend the business account has committed to (custom field).
+  - name: CreatedDate
+    type: timestamp
+    required: false
+    description: When the record was created in Salesforce.
+  - name: LastModifiedDate
+    type: timestamp
+    required: false
+    description: When a user last changed the record in Salesforce.
+  - name: SystemModstamp
+    type: timestamp
+    required: false
+    description: When the record was last changed by a user or by Salesforce itself.
+  - name: IsDeleted
+    type: boolean
+    required: false
+    description: Whether the record is in the Salesforce recycle bin.
+
+primary_key:
+- Id
+
+quality:
+  row_rules:
+  - name: Id_not_null
+    sql: Id IS NOT NULL
+    category: completeness
+    description: id is always present (never null).
+  - name: Status_not_null
+    sql: Status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - Id
+    sort_by:
+    - LastModifiedDate
+    order: desc
+
+dataset: silver_salesforce_contracts
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_salesforce_contracts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

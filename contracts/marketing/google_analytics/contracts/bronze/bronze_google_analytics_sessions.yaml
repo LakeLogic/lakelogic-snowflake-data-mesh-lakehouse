@@ -1,0 +1,100 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Google Analytics Sessions
+  target_layer: bronze
+  description: Website visit records from Google Analytics, capturing each session
+    with an anonymised visitor identifier, a logged-in customer identifier where the
+    visitor was signed in, and the network address they connected from, which is flagged
+    as personal data. Each record carries the session start time, duration and page
+    count alongside the referring site, channel type and named campaign that brought
+    the visitor, plus device type, country and landing page. The country is expected
+    to be present on every record.
+  table_name: '{bronze_layer}_google_analytics_sessions'
+  domain: marketing
+  system: google_analytics
+
+model:
+  fields:
+  - name: session_id
+    type: string
+    description: Unique identifier for a single visit to the website; used to group
+      all activity that happened within one session.
+  - name: user_pseudo_id
+    type: string
+    description: An anonymised identifier for the visitor, letting us recognise repeat
+      visits from the same person without knowing who they are.
+  - name: user_id
+    type: string
+    description: The logged-in customer identifier when a visitor is signed in, linking
+      their website activity to their known account.
+  - name: ip_address
+    type: string
+    pii: true
+    classification: ip_address
+    description: The network address the visitor connected from, used for location
+      and fraud checks; this is personal data and should be handled with care.
+  - name: session_start
+    type: string
+    description: The date and time the visit began, used to understand when and how
+      often customers engage with us.
+  - name: session_duration_seconds
+    type: string
+    description: How long the visit lasted in seconds, a signal of how engaging the
+      experience was.
+  - name: page_views
+    type: string
+    description: The number of pages the visitor looked at during the session, showing
+      depth of interest.
+  - name: traffic_source
+    type: string
+    description: The website or platform that referred the visitor, showing where
+      our audience comes from.
+  - name: traffic_medium
+    type: string
+    description: The channel type that brought the visitor (for example organic search,
+      paid ads or email), helping us judge which marketing channels work.
+  - name: traffic_campaign
+    type: string
+    description: The named marketing campaign that drove the visit, used to measure
+      campaign performance.
+  - name: device_category
+    type: string
+    description: The type of device used for the visit (such as desktop, mobile or
+      tablet), informing how customers reach us.
+  - name: geo_country
+    type: string
+    description: The country the visit came from, supporting regional analysis of
+      our audience.
+  - name: landing_page
+    type: string
+    description: The first page the visitor arrived on, showing which entry points
+      attract and hold attention.
+
+source:
+  type: landing
+  path: '{landing_root}/sessions'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- session_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+quality:
+  row_rules:
+  - name: geo_country_partition_not_null
+    sql: geo_country IS NOT NULL
+    category: completeness
+    description: geo_country is always present (never null).
+
+materialization:
+  partition_by:
+  - geo_country
+
+dataset: bronze_google_analytics_sessions

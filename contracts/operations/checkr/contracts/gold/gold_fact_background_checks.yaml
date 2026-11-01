@@ -1,0 +1,185 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Background Checks
+  target_layer: gold
+  description: Background screening reports for drivers, each tracked from the moment
+    a check is requested through to completion, with the current stage, the overall
+    outcome, and the resulting hiring decision recorded alongside. Checks are linked
+    to the driver profile and driver licence record known at the time, and the records
+    originate from the Checkr screening system.
+  table_name: '{gold_layer}_fact_background_checks'
+  system: checkr
+  domain: operations
+
+model:
+  fields:
+  - name: report_id
+    type: string
+    required: true
+    description: Unique identifier for a background check report, used to track and
+      reference the screening throughout its lifecycle.
+  - name: created_at
+    type: timestamp
+    required: false
+    description: The date and time the background check was requested, marking when
+      the screening process began.
+  - name: completed_at
+    type: timestamp
+    required: false
+    description: The date and time the background check finished, useful for tracking
+      turnaround times and compliance deadlines.
+  - name: driver_id
+    type: string
+    required: false
+    description: Identifier for the driver or worker who is the subject of the background
+      check, linking the report to the person's operational record.
+  - name: driver_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_driver_profiles
+      column: driver_profiles_sk
+    description: Surrogate key of gold_dim_driver_profiles, looked up as of created_at;
+      '-1' when the dimension does not know the row.
+  - name: status_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_background_checks_status
+      column: status_sk
+    description: Surrogate key of gold_dim_background_checks_status, looked up on
+      its business key; '-1' when the dimension does not know the row.
+  - name: result_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_result
+      column: result_sk
+    description: Surrogate key of gold_dim_result, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: adjudication_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_adjudication
+      column: adjudication_sk
+    description: Surrogate key of gold_dim_adjudication, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: completed_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `completed_at`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_background_checks
+
+primary_key:
+- report_id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - report_id
+      name: report_id_unique
+      category: uniqueness
+      description: No two rows share the same report_id.
+  - name: driver_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE driver_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose driver_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: status_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE status_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose status_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: result_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE result_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose result_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: adjudication_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE adjudication_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose adjudication_sk fell back to the unknown member — the
+      dimension did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.report_id,
+      r.created_at,
+      r.completed_at,
+      r.driver_id,
+      COALESCE(d1.driver_profiles_sk, '-1') AS driver_sk,
+      COALESCE(d2.status_sk, '-1') AS status_sk,
+      COALESCE(d3.result_sk, '-1') AS result_sk,
+      COALESCE(d4.adjudication_sk, '-1') AS adjudication_sk,
+      CAST(r.completed_at AS DATE) AS completed_date
+    FROM source r
+    LEFT JOIN gold_dim_driver_profiles d1
+      ON  r.driver_id = d1.driver_id
+      AND r.created_at >= d1.effective_from
+      AND r.created_at < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_background_checks_status d2
+      ON  r.status = d2.status
+    LEFT JOIN gold_dim_result d3
+      ON  r.result = d3.result
+    LEFT JOIN gold_dim_adjudication d4
+      ON  r.adjudication = d4.adjudication
+- phase: pre
+  derive:
+    field: system
+    sql: '''checkr'''
+
+links:
+- name: gold_dim_driver_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_driver_profiles
+- name: gold_dim_background_checks_status
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_background_checks_status
+- name: gold_dim_result
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_result
+- name: gold_dim_adjudication
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_adjudication
+
+upstream:
+- gold_dim_adjudication
+- gold_dim_background_checks_status
+- gold_dim_driver_profiles
+- gold_dim_result
+
+materialization:
+  fact:
+    type: accumulating_snapshot
+    milestone_dates:
+    - created_at
+    - completed_at
+  partition_by:
+  - completed_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_checkr_background_checks
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,92 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Push Notifications Daily
+  target_layer: gold
+  description: 'grain: one row per day'
+  table_name: '{gold_layer}_fact_push_notifications_daily'
+  system: hubspot
+  domain: marketing
+
+model:
+  fields:
+  - name: activity_date
+    type: date
+    required: true
+    description: Calendar day the row summarises.
+  - name: notification_count
+    type: integer
+    required: false
+    description: Number of push notifications in the row.
+  - name: date_key
+    type: integer
+    required: false
+    foreign_key:
+      contract: gold_dim_date
+      column: date_key
+    description: The day of activity_date as YYYYMMDD — the key of the date dimension.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_push_notifications_daily
+
+primary_key:
+- activity_date
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - activity_date
+      name: activity_date_unique
+      category: uniqueness
+      description: No two rows share the same activity_date.
+
+transformations:
+- phase: pre
+  sql: |-
+    WITH touched AS (
+      SELECT DISTINCT
+        CAST(sent_at AS DATE) AS _touched_0
+      FROM source
+    ),
+    r AS (
+      SELECT
+        CAST(sent_at AS DATE) AS activity_date,
+        COUNT(notification_id) AS notification_count
+      FROM silver_hubspot_push_notifications_full
+      JOIN touched
+        ON CAST(sent_at AS DATE) = touched._touched_0
+      GROUP BY CAST(sent_at AS DATE)
+    )
+    SELECT
+      r.activity_date,
+      r.notification_count,
+      CAST(EXTRACT(YEAR FROM r.activity_date) AS BIGINT) * 10000 + CAST(EXTRACT(MONTH FROM r.activity_date) AS BIGINT) * 100 + CAST(EXTRACT(DAY FROM r.activity_date) AS BIGINT) AS date_key
+    FROM r
+- phase: pre
+  derive:
+    field: system
+    sql: '''hubspot'''
+
+links:
+- name: silver_hubspot_push_notifications_full
+  type: table
+  path: table:{silver_root}.{silver_layer}_hubspot_push_notifications
+
+upstream: []
+
+materialization:
+  fact:
+    type: aggregate
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_hubspot_push_notifications
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

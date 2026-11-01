@@ -1,0 +1,93 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Trust Safety Incident Reports
+  target_layer: bronze
+  description: Safety incident reports filed against individual trips and drivers,
+    each traced back to the source document it was taken from. Records carry the incident's
+    category, when and where it happened, a written account in the reporter's own
+    words, and who filed it, alongside an estimated cost kept as originally stated.
+    Identifiers for the incident, trip and driver allow each report to be cross-referenced
+    and followed up.
+  table_name: '{bronze_layer}_trust_safety_incident_reports'
+  domain: operations
+  system: trust_safety
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    description: The document this row was extracted from.
+  - name: incident_id
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Incident\s*ID\s*([A-Z]{3}-\d{8}-\d{3})
+    description: Unique incident identifier in the form AAA-########-###.
+  - name: trip_id
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Trip\s*ID\s*([A-Z]{3}-\d{4})
+    description: Trip identifier in the form AAA-####.
+  - name: driver_id
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Driver\s*ID\s*([A-Z]{3}-\d{4})
+    description: Driver identifier in the form AAA-####.
+  - name: incident_datetime
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Date\s*and\s*time\s*(\d{2}/\d{2}/\d{4}\s*\d{2}:\d{2})
+    description: Date and time of the incident as printed (DD/MM/YYYY HH:MM); kept
+      as string, silver converts.
+  - name: location
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Location\s*([A-Z]{3}\s+[a-z]+\s+[a-z]+)
+    description: Incident location, three uppercase letters followed by two lowercase
+      words.
+  - name: incident_type
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Type\s*([A-Z][a-z]+(?:\s+[a-z]+)?)
+    description: Category/type of the incident, one or two words.
+  - name: estimated_cost
+    type: double
+    extraction_task: metadata
+    extraction_examples:
+    - Estimated\s*cost\s*(\d+\.\d{2})
+    description: Estimated cost of the incident as a decimal amount.
+  - name: reported_by
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Reported\s*by\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)
+    description: Name of the person who reported the incident.
+  - name: what_happened
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - What\s*happened\s*\n([^\n]+)
+    description: Free-text narrative describing the incident.
+
+source:
+  type: landing
+  path: '{landing_root}/incident_reports/**/*.docx'
+  format: docx
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_trust_safety_incident_reports
+
+extraction:
+  provider: document

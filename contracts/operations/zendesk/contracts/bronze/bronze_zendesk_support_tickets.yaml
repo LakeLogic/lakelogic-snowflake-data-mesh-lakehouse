@@ -1,0 +1,118 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Zendesk Support Tickets
+  target_layer: bronze
+  description: Customer support tickets raised through Zendesk, capturing how each
+    case entered the business, the issue described in the customer's own words, and
+    the agent or team handling it. Tickets link back to the rider, trip, driver and
+    charge involved, and carry the requester's name, email address and phone number
+    as personal contact data. Status, priority, channel, timestamps and a post-resolution
+    satisfaction score record how each case progressed and how it was received.
+  table_name: '{bronze_layer}_zendesk_support_tickets'
+  domain: operations
+  system: zendesk
+
+model:
+  fields:
+  - name: ticket_id
+    type: string
+    description: Unique identifier for a customer support ticket. Used to track and
+      reference the case throughout its lifecycle.
+  - name: entry_point
+    type: string
+    description: The route or channel through which the support request first entered
+      the system, helping teams understand how customers reach out.
+  - name: rider_id
+    type: string
+    description: Identifier for the rider associated with the support case, linking
+      the ticket to a specific customer journey.
+  - name: trip_id
+    type: string
+    description: Identifier for the trip the support case relates to, allowing the
+      issue to be traced back to a specific ride.
+  - name: driver_id
+    type: string
+    description: Identifier for the driver involved in the support case, used to connect
+      the issue to the person who served the trip.
+  - name: charge_id
+    type: string
+    description: Identifier for the charge or payment associated with the support
+      case, useful for resolving billing-related questions.
+  - name: requester_email
+    type: string
+    pii: true
+    classification: email
+    description: Email address of the person who raised the ticket. Personal contact
+      data used to follow up with the customer.
+  - name: requester_name
+    type: string
+    description: Name of the person who raised the ticket, used to identify and personalize
+      communication with the customer.
+  - name: requester_phone
+    type: string
+    pii: true
+    classification: phone
+    description: Phone number of the person who raised the ticket. Personal contact
+      data used for direct follow-up.
+  - name: subject
+    type: string
+    description: Short summary line of the support ticket, giving a quick view of
+      what the customer's issue is about.
+  - name: ticket_description
+    type: string
+    description: Full text of the customer's request or issue, providing the detail
+      agents need to resolve the case.
+  - name: status
+    type: string
+    description: Current stage of the ticket in the support workflow (for example
+      open, pending, or solved), showing how far the case has progressed.
+  - name: priority
+    type: string
+    description: Urgency level assigned to the ticket, helping teams decide which
+      cases to handle first.
+  - name: channel
+    type: string
+    description: The medium through which the customer contacted support, such as
+      email, chat, or phone.
+  - name: assignee
+    type: string
+    description: The support agent or team currently responsible for handling the
+      ticket.
+  - name: tags_json
+    type: string
+    description: Labels attached to the ticket for categorizing and grouping similar
+      issues, stored as structured text.
+  - name: created_at
+    type: string
+    description: Date and time the ticket was first raised, used to measure response
+      times and case age.
+  - name: updated_at
+    type: string
+    description: Date and time the ticket was last changed, showing when the case
+      was most recently worked on.
+  - name: solved_at
+    type: string
+    description: Date and time the ticket was marked as resolved, used to measure
+      how long cases take to close.
+  - name: satisfaction_rating
+    type: Float64
+    description: Customer satisfaction score given after the ticket was resolved,
+      reflecting how happy the customer was with the support received.
+
+source:
+  type: landing
+  path: '{landing_root}/support_tickets'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- ticket_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_zendesk_support_tickets

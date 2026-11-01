@@ -1,0 +1,172 @@
+version: 1.0.0
+
+info:
+  data_product: marketplace_health
+  data_product_output: mart_marketplace_health
+  title: "Gold — Mart Marketplace Health"
+  table_name: '{gold_layer}_mart_marketplace_health'
+  description: >
+    Cross-domain marketplace KPIs per (kpi_date, city_code). Joins
+    requests / completed trips / cancellations / charges / driver
+    activity into one snapshot per city per day. Powers the executive
+    marketplace dashboard.
+  target_layer: gold
+  domain: shared
+  system: shared
+
+primary_key: [kpi_date, city_code]
+
+model:
+  fields:
+    # ── Dimensions ──
+    - name: kpi_date
+      type: date
+      description: Calendar day the measures are for.
+      required: true
+    - name: city_code
+      type: string
+      description: RideFlow city code.
+      required: true
+    # ── Volume ──
+    - name: requested_trips
+      type: integer
+      description: Trips requested in the city that day.
+    - name: completed_trips
+      type: integer
+      description: Trips completed in the city that day.
+    - name: cancelled_trips
+      type: integer
+      description: Trips cancelled in the city that day.
+    # ── Ratios ──
+    - name: completion_rate
+      type: float
+      description: "completed_trips ÷ NULLIF(requested_trips, 0)"
+    - name: cancellation_rate
+      type: float
+      description: "cancelled_trips ÷ NULLIF(requested_trips, 0)"
+    # ── Supply ──
+    - name: active_drivers
+      type: integer
+      description: "Distinct driver_ids that completed at least one trip on kpi_date."
+    - name: driver_utilization_rate
+      type: float
+      description: "completed_trips ÷ NULLIF(active_drivers, 0) — avg trips per active driver."
+    # ── Revenue ──
+    - name: gross_revenue_amount
+      type: float
+      description: "Sum of stripe_charges.amount linked to completed trips on kpi_date."
+    - name: revenue_per_active_rider
+      type: float
+      description: "gross_revenue_amount ÷ NULLIF(active_riders, 0)"
+    - name: active_riders
+      type: integer
+      description: "Distinct rider_ids requesting at least one trip on kpi_date."
+    - name: system
+      type: string
+      required: true
+      description: Source system this row came from
+
+source:
+  type: table
+  # Primary fact is the request stream — every other metric is joined or
+  # derived from it.
+  path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_trip_requests"
+  # Stays full (deliberate): an aggregate over its sources. An incremental batch
+  # holds only new rows, so re-grouping it would overwrite a complete aggregate
+  # with a partial one; the engine has no recompute-affected-keys mode.
+  load_mode: full
+
+transformations:
+  # Independent per-(kpi_date, city_code) aggregations unioned on a key spine,
+  # all dated on requested_at so requested_trips >= completed/cancelled holds by
+  # construction. Physical LINK reads (source/src would be projected to model).
+  - phase: pre
+    sql: |
+      WITH req AS (
+        SELECT to_date(requested_at) AS kpi_date, city_code,
+               COUNT(*) AS requested_trips, COUNT(DISTINCT rider_id) AS active_riders
+        FROM mp_requests GROUP BY to_date(requested_at), city_code
+      ),
+      tr AS (
+        SELECT to_date(requested_at) AS kpi_date, city_code,
+               COUNT(*) AS completed_trips, COUNT(DISTINCT driver_id) AS active_drivers
+        FROM mp_trips GROUP BY to_date(requested_at), city_code
+      ),
+      can AS (
+        SELECT to_date(requested_at) AS kpi_date, city_code, COUNT(*) AS cancelled_trips
+        FROM mp_cancels GROUP BY to_date(requested_at), city_code
+      ),
+      rev AS (
+        SELECT to_date(t.requested_at) AS kpi_date, t.city_code,
+               SUM(CAST(ch.amount AS double)) AS gross_revenue_amount
+        FROM pay_charges ch JOIN mp_trips t ON ch.trip_id = t.trip_id
+        GROUP BY to_date(t.requested_at), t.city_code
+      ),
+      keys AS (
+        SELECT kpi_date, city_code FROM req
+        UNION SELECT kpi_date, city_code FROM tr
+        UNION SELECT kpi_date, city_code FROM can
+      )
+      SELECT k.kpi_date, k.city_code,
+             CAST(COALESCE(req.requested_trips,0) AS int)  AS requested_trips,
+             CAST(COALESCE(tr.completed_trips,0)  AS int)  AS completed_trips,
+             CAST(COALESCE(can.cancelled_trips,0) AS int)  AS cancelled_trips,
+             CAST(COALESCE(tr.completed_trips,0) AS double)  / NULLIF(req.requested_trips,0) AS completion_rate,
+             CAST(COALESCE(can.cancelled_trips,0) AS double) / NULLIF(req.requested_trips,0) AS cancellation_rate,
+             CAST(COALESCE(tr.active_drivers,0) AS int)    AS active_drivers,
+             CAST(COALESCE(tr.completed_trips,0) AS double)  / NULLIF(tr.active_drivers,0) AS driver_utilization_rate,
+             COALESCE(rev.gross_revenue_amount,0.0)        AS gross_revenue_amount,
+             COALESCE(rev.gross_revenue_amount,0.0) / NULLIF(req.active_riders,0) AS revenue_per_active_rider,
+             CAST(COALESCE(req.active_riders,0) AS int)    AS active_riders,
+             'rideflow'                                    AS system
+      FROM keys k
+      LEFT JOIN req ON req.kpi_date=k.kpi_date AND req.city_code=k.city_code
+      LEFT JOIN tr  ON tr.kpi_date=k.kpi_date  AND tr.city_code=k.city_code
+      LEFT JOIN can ON can.kpi_date=k.kpi_date AND can.city_code=k.city_code
+      LEFT JOIN rev ON rev.kpi_date=k.kpi_date AND rev.city_code=k.city_code
+
+quality:
+  row_rules:
+    - name: completion_rate_in_range
+      category: validity
+      sql: "completion_rate IS NULL OR (completion_rate >= 0 AND completion_rate <= 1)"
+    - name: cancellation_rate_in_range
+      category: validity
+      sql: "cancellation_rate IS NULL OR (cancellation_rate >= 0 AND cancellation_rate <= 1)"
+    - name: requested_ge_completed
+      category: consistency
+      sql: "requested_trips IS NULL OR completed_trips IS NULL OR requested_trips >= completed_trips"
+    - name: requested_ge_cancelled
+      category: consistency
+      sql: "requested_trips IS NULL OR cancelled_trips IS NULL OR requested_trips >= cancelled_trips"
+  dataset_rules: []
+
+materialization:
+  strategy: overwrite
+  format: delta
+
+# Cross-domain link registrations — read as full physical UC tables by name.
+links:
+  - name: mp_requests
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_trip_requests"
+  - name: mp_trips
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_trip_completed"
+  - name: mp_cancels
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_trip_cancellations"
+  - name: pay_charges
+    type: table
+    path: "table:`{domain_catalog_prefix}_payments`.silver.silver_stripe_charges"
+
+downstream:
+  - type: semantic_model
+    name: "sm_rideflow_gold"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_executive"
+        platform: powerbi
+        managed: false

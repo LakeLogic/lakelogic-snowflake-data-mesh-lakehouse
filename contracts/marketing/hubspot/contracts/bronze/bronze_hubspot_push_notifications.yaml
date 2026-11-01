@@ -1,0 +1,66 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Hubspot Push Notifications
+  target_layer: bronze
+  description: Push notification sends from the marketing system, one row per notification,
+    recording which customer each message went to, the device address it was delivered
+    to, and the campaign it belongs to. Timestamps trace the journey from send through
+    delivery to the moment the customer opened it, alongside the device platform used.
+    The content ties messages to individual people and their devices, so it carries
+    personal data.
+  table_name: '{bronze_layer}_hubspot_push_notifications'
+  domain: marketing
+  system: hubspot
+
+model:
+  fields:
+  - name: notification_id
+    type: string
+    description: Unique identifier for each push notification sent, used to track
+      and reconcile individual sends.
+  - name: rider_id
+    type: string
+    description: Identifies the customer or rider the notification was sent to, linking
+      the message to a person.
+  - name: device_token
+    type: string
+    description: The device address the notification was delivered to, used to confirm
+      reachability of the customer's phone or tablet.
+  - name: campaign_name
+    type: string
+    description: The marketing campaign this notification belongs to, so performance
+      can be grouped and compared by campaign.
+  - name: sent_at
+    type: string
+    description: When the notification was sent out, marking the start of the delivery
+      journey.
+  - name: delivered_at
+    type: string
+    description: When the notification successfully reached the customer's device,
+      showing whether it was actually received.
+  - name: opened_at
+    type: string
+    description: When the customer opened the notification, indicating engagement
+      with the message.
+  - name: platform
+    type: string
+    description: The device platform (such as iOS or Android) the notification was
+      sent to, useful for comparing engagement across device types.
+
+source:
+  type: landing
+  path: '{landing_root}/push_notifications'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- notification_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_hubspot_push_notifications

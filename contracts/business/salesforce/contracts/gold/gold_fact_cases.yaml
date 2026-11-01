@@ -1,0 +1,200 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Cases
+  target_layer: gold
+  description: 'grain: one row per support case, updated as it moves from creation
+    to closure'
+  table_name: '{gold_layer}_fact_cases'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: Id
+    type: string
+    required: true
+    description: Salesforce record ID; unique per record.
+  - name: CreatedDate
+    type: timestamp
+    required: false
+    description: When the record was created in Salesforce.
+  - name: ClosedDate
+    type: date
+    required: false
+    description: When the case was closed.
+  - name: CaseNumber
+    type: string
+    required: false
+    description: Case number shown to users in Salesforce.
+  - name: Subject
+    type: string
+    required: false
+    description: Short summary of the case.
+  - name: account_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_accounts
+      column: accounts_sk
+    description: Surrogate key of gold_dim_accounts, looked up as of CreatedDate;
+      '-1' when the dimension does not know the row.
+  - name: contact_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_contacts
+      column: contacts_sk
+    description: Surrogate key of gold_dim_contacts, looked up as of CreatedDate;
+      '-1' when the dimension does not know the row.
+  - name: Status_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_cases_status
+      column: Status_sk
+    description: Surrogate key of gold_dim_cases_status, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: Priority_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_salesforce_dim_priority
+      column: Priority_sk
+    description: Surrogate key of gold_salesforce_dim_priority, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: Origin_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_origin
+      column: Origin_sk
+    description: Surrogate key of gold_dim_origin, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_cases
+
+primary_key:
+- Id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - Id
+      name: Id_unique
+      category: uniqueness
+      description: No two rows share the same Id.
+  - name: account_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE account_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose account_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: contact_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE contact_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose contact_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: Status_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE Status_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose Status_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: Priority_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE Priority_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose Priority_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: Origin_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE Origin_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose Origin_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.Id,
+      r.CreatedDate,
+      r.ClosedDate,
+      r.CaseNumber,
+      r.Subject,
+      COALESCE(d1.accounts_sk, '-1') AS account_sk,
+      COALESCE(d2.contacts_sk, '-1') AS contact_sk,
+      COALESCE(d3.Status_sk, '-1') AS Status_sk,
+      COALESCE(d4.Priority_sk, '-1') AS Priority_sk,
+      COALESCE(d5.Origin_sk, '-1') AS Origin_sk
+    FROM source r
+    LEFT JOIN gold_dim_accounts d1
+      ON  r.AccountId = d1.Id
+      AND r.CreatedDate >= d1.effective_from
+      AND r.CreatedDate < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_contacts d2
+      ON  r.ContactId = d2.Id
+      AND r.CreatedDate >= d2.effective_from
+      AND r.CreatedDate < COALESCE(d2.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_cases_status d3
+      ON  r.Status = d3.Status
+    LEFT JOIN gold_salesforce_dim_priority d4
+      ON  r.Priority = d4.Priority
+    LEFT JOIN gold_dim_origin d5
+      ON  r.Origin = d5.Origin
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+links:
+- name: gold_dim_accounts
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_accounts
+- name: gold_dim_contacts
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_contacts
+- name: gold_dim_cases_status
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_cases_status
+- name: gold_salesforce_dim_priority
+  type: table
+  path: table:{gold_root}.{gold_layer}_salesforce_dim_priority
+- name: gold_dim_origin
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_origin
+
+upstream:
+- gold_dim_accounts
+- gold_dim_cases_status
+- gold_dim_contacts
+- gold_dim_origin
+- gold_salesforce_dim_priority
+
+materialization:
+  fact:
+    type: accumulating_snapshot
+    milestone_dates:
+    - CreatedDate
+    - ClosedDate
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_cases
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,99 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Google Analytics App Events
+  target_layer: bronze
+  description: App activity from Google Analytics, capturing actions users take in
+    the app — opening it, making a purchase, and similar events — along with when
+    each one happened and on which calendar day. Each record carries an anonymous
+    device-level identifier plus, where available, a signed-in user identifier, alongside
+    device type and operating system, the app version in use, and the country and
+    city the user was in. Device and network identifiers and IP addresses are present
+    as personal data without masking, so access should be limited.
+  table_name: '{bronze_layer}_google_analytics_app_events'
+  domain: marketing
+  system: google_analytics
+
+model:
+  fields:
+  - name: event_name
+    type: string
+    description: The name of the app action a user performed, such as opening the
+      app or making a purchase. Used to understand which activities users engage in.
+  - name: event_timestamp
+    type: string
+    description: The exact moment the event took place, recorded from the user's device.
+      Used to order activity and measure timing.
+  - name: event_date
+    type: string
+    description: The calendar date the event occurred, used for daily reporting and
+      trend comparisons.
+  - name: user_pseudo_id
+    type: string
+    description: An anonymous identifier assigned to a user's device or app install.
+      Lets us follow a user's journey without knowing who they are.
+  - name: user_id
+    type: string
+    description: The identifier for a signed-in user, when available. Links activity
+      across devices for known customers.
+  - name: device_id
+    type: string
+    pii: true
+    classification: device_id
+    description: A unique identifier for the user's device. Personal data that is
+      not currently masked, so access should be limited.
+  - name: ip_address
+    type: string
+    pii: true
+    classification: ip_address
+    description: The network address the user connected from. Personal data that is
+      not currently masked, so access should be limited.
+  - name: device_category
+    type: string
+    description: The type of device used, such as mobile, tablet or desktop. Helps
+      compare behaviour across device types.
+  - name: device_os
+    type: string
+    description: The operating system of the user's device, such as iOS or Android.
+      Useful for spotting platform-specific issues.
+  - name: geo_country
+    type: string
+    description: The country the user was in when the event happened. Supports regional
+      reporting and market analysis.
+  - name: geo_city
+    type: string
+    description: The city the user was in when the event happened. Gives a more local
+      view of where activity comes from.
+  - name: app_version
+    type: string
+    description: The version of the app the user was running. Helps assess how releases
+      affect user behaviour.
+  - name: event_params_json
+    type: string
+    description: Additional details attached to the event, stored together as a single
+      record. Holds extra context that varies by event type.
+
+source:
+  type: landing
+  path: '{landing_root}/app_events'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+quality:
+  row_rules:
+  - name: geo_country_partition_not_null
+    sql: geo_country IS NOT NULL
+    category: completeness
+    description: geo_country is always present (never null).
+
+materialization:
+  partition_by:
+  - geo_country
+
+dataset: bronze_google_analytics_app_events

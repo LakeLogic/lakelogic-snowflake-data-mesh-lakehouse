@@ -1,0 +1,89 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Rideflow Rider Profiles
+  target_layer: bronze
+  description: Rider account records from the Rideflow marketplace, each identified
+    by a rider ID and carrying the personal details riders give at sign-up — full
+    name, email, phone number, date of birth and home address — alongside a city code,
+    sign-up date, account status and preferred payment method. The data supports linking
+    a rider to their trips, payments and support history, and tracking rider growth
+    by sign-up cohort. Every field is nullable, so completeness of the personal data
+    is not enforced by the contract.
+  table_name: '{bronze_layer}_rideflow_rider_profiles'
+  domain: marketplace
+  system: rideflow
+
+model:
+  fields:
+  - name: rider_id
+    type: string
+    description: Unique identifier for each rider in the Rideflow marketplace. Used
+      to link a rider to their trips, payments and support history.
+  - name: name
+    type: string
+    pii: true
+    classification: person_name
+    description: The rider's full name as provided at sign-up. Personal data used
+      for account identification and customer communication.
+  - name: email
+    type: string
+    pii: true
+    classification: email
+    description: The rider's email address, used for account access, receipts and
+      service notifications. Personal data that should be handled with care.
+  - name: phone
+    type: string
+    pii: true
+    classification: phone
+    description: The rider's contact phone number, used for trip coordination and
+      account verification. Personal data that should be handled with care.
+  - name: date_of_birth
+    type: string
+    pii: true
+    classification: date_of_birth
+    description: The rider's date of birth, used for age-related eligibility and account
+      verification. Personal data that should be handled with care.
+  - name: home_address
+    type: string
+    pii: true
+    classification: postal_address
+    description: The rider's home address, used for billing and service coverage checks.
+      Personal data that should be handled with care.
+  - name: city_code
+    type: string
+    description: Short code for the city the rider is associated with. Supports regional
+      reporting and local service operations.
+  - name: signup_date
+    type: string
+    description: The date the rider created their Rideflow account. Useful for tracking
+      rider growth and cohort analysis.
+  - name: status
+    type: string
+    description: Current state of the rider's account, such as active or inactive.
+      Helps teams understand who can currently use the service.
+  - name: preferred_payment_method
+    type: string
+    description: The payment method the rider prefers to use for trips. Supports billing
+      operations and payment experience improvements.
+  - name: updated_at
+    type: string
+    description: Timestamp of the most recent change to the rider's profile record.
+      Indicates how current the information is.
+
+source:
+  type: landing
+  path: '{landing_root}/rider_profiles'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- rider_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_rideflow_rider_profiles

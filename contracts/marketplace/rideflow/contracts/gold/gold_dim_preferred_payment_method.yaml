@@ -1,0 +1,71 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Preferred Payment Method
+  target_layer: gold
+  description: Riders' preferred ways to pay, such as a card or digital wallet, captured
+    so the business can see how customers choose to pay. Each record carries a surrogate
+    key, with a special value of '-1' standing for riders whose payment method is
+    unknown, and a source-system marker for tracing where the information came from.
+  table_name: '{gold_layer}_dim_preferred_payment_method'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: preferred_payment_method_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: preferred_payment_method
+    type: string
+    required: true
+    description: The payment method a rider prefers to use, such as a card or digital
+      wallet, used to understand how customers choose to pay.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_preferred_payment_method
+
+primary_key:
+- preferred_payment_method
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - preferred_payment_method
+      name: preferred_payment_method_unique
+      category: uniqueness
+      description: No two rows share the same preferred_payment_method.
+
+materialization:
+  scd1:
+    surrogate_key: preferred_payment_method_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT preferred_payment_method
+    FROM source
+    WHERE preferred_payment_method IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_rider_profiles
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

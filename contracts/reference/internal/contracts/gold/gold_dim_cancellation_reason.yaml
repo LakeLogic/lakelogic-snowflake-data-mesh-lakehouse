@@ -1,0 +1,87 @@
+version: 1.0.0
+
+info:
+  data_product: reference_data
+  data_product_output: dim_cancellation_reason
+  title: Gold — Dim Cancellation Reason
+  target_layer: gold
+  description: A reference list of the reasons a cancellation can be recorded against,
+    each with a short code, a human-readable label, and the party held responsible,
+    such as the customer, driver or platform. It also records whether a cancellation
+    fee applies and whether the cancellation counts against the driver's rating, so
+    cancellations can be attributed and scored consistently. Records carry the source
+    system they came from, and an unknown or unmatched reason is represented by a
+    placeholder identifier.
+  table_name: '{gold_layer}_dim_cancellation_reason'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: cancellation_reason_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: reason_code
+    type: string
+    required: true
+    description: The short code that uniquely identifies a cancellation reason, used
+      to link cancellations to their explanation across systems.
+  - name: reason_label
+    type: string
+    required: false
+    description: The human-readable name of the cancellation reason, shown to staff
+      and in reports.
+  - name: actor
+    type: string
+    required: false
+    description: The party responsible for the cancellation (for example the customer,
+      driver or platform), used to attribute and analyse cancellations.
+  - name: charge_cancellation_fee
+    type: decimal(18,2)
+    required: false
+    description: Whether a cancellation fee applies for this reason, which drives
+      billing and customer communication.
+  - name: counts_against_driver_rating
+    type: boolean
+    required: false
+    description: Whether this cancellation counts against the driver's rating, so
+      it affects driver performance scoring.
+  - name: severity
+    type: string
+    required: false
+    description: How serious this cancellation reason is, used to prioritise follow-up
+      and reporting.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_cancellation_reason
+
+primary_key:
+- reason_code
+
+materialization:
+  scd1:
+    surrogate_key: cancellation_reason_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_internal_dim_cancellation_reason_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''internal'''

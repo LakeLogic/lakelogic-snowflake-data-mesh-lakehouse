@@ -1,0 +1,67 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Origin
+  target_layer: gold
+  description: 'grain: one row per Origin'
+  table_name: '{gold_layer}_dim_origin'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: Origin_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: Origin
+    type: string
+    required: true
+    description: Channel the case came in through, such as email or phone.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_origin
+
+primary_key:
+- Origin
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - Origin
+      name: Origin_unique
+      category: uniqueness
+      description: No two rows share the same Origin.
+
+materialization:
+  scd1:
+    surrogate_key: Origin_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT Origin
+    FROM source
+    WHERE Origin IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_cases
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

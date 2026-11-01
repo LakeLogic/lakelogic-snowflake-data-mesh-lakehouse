@@ -1,0 +1,122 @@
+version: 1.0.0
+
+info:
+  data_product: acquisition_performance
+  data_product_output: agg_acquisition_roi
+  title: "Gold — Agg Acquisition ROI"
+  table_name: '{gold_layer}_agg_acquisition_roi'
+  description: >
+    Daily pre-aggregated Google Ads spend metrics rolled up across all
+    campaigns. One row per reported_date. CAC and conversion rate are
+    derived from sum(spend), sum(clicks), sum(conversions).
+  target_layer: gold
+  domain: marketing
+  system: google_ads
+
+model:
+  fields:
+    - name: date
+      type: string
+      required: true
+      description: "Aggregation grain (kept as string to match silver type)"
+    - name: total_cost
+      type: float
+      description: Total ad spend.
+    - name: total_impressions
+      type: long
+      description: Total ad impressions.
+    - name: total_clicks
+      type: long
+      description: Total ad clicks.
+    - name: total_conversions
+      type: long
+      description: Total conversions attributed to the ads.
+    - name: total_conversion_value
+      type: float
+      description: Total value of the conversions attributed to the ads.
+    - name: cac
+      type: float
+      description: "Cost per Acquisition = total_cost / total_conversions"
+    - name: ctr
+      type: float
+      description: "Click-through rate = total_clicks / total_impressions"
+    - name: conversion_rate
+      type: float
+      description: "= total_conversions / total_clicks"
+    - name: roas
+      type: float
+      description: "Return on Ad Spend = total_conversion_value / total_cost"
+    - name: system
+      type: string
+      required: true
+      description: Source system this row came from
+
+primary_key: [date]
+
+source:
+  type: table
+  path: "table:{silver_root}.silver_google_ads_campaigns"
+  # Stays full (deliberate): an aggregate over its sources. An incremental batch
+  # holds only new rows, so re-grouping it would overwrite a complete aggregate
+  # with a partial one; the engine has no recompute-affected-keys mode.
+  load_mode: full
+
+# The engine prunes `source` to this contract's MODEL columns before the pre-SQL
+# runs, so raw silver columns (cost, impressions, …) aren't visible via `source`.
+# Read them through a LINK to the full silver table instead (same pattern the
+# marketplace fact contracts use).
+links:
+  - name: silver_campaigns_full
+    path: "table:{silver_root}.silver_google_ads_campaigns"
+    type: table
+
+# phase: pre — a single aggregation SQL (was a post-phase rollup + derives).
+# Aggregates the FULL silver table (via the link) so raw columns are intact and
+# emits exactly the model's aggregated shape.
+transformations:
+  - phase: pre
+    sql: |
+      SELECT
+        date,
+        total_cost, total_impressions, total_clicks,
+        total_conversions, total_conversion_value,
+        CASE WHEN total_conversions > 0 THEN total_cost / total_conversions ELSE NULL END AS cac,
+        CASE WHEN total_impressions > 0 THEN CAST(total_clicks AS DOUBLE) / total_impressions ELSE NULL END AS ctr,
+        CASE WHEN total_clicks > 0 THEN CAST(total_conversions AS DOUBLE) / total_clicks ELSE NULL END AS conversion_rate,
+        CASE WHEN total_cost > 0 THEN total_conversion_value / total_cost ELSE NULL END AS roas,
+        'google_ads' AS system
+      FROM (
+        SELECT
+          date,
+          SUM(CAST(cost AS DOUBLE))              AS total_cost,
+          SUM(CAST(impressions AS BIGINT))       AS total_impressions,
+          SUM(CAST(clicks AS BIGINT))            AS total_clicks,
+          SUM(CAST(conversions AS BIGINT))       AS total_conversions,
+          SUM(CAST(conversion_value AS DOUBLE))  AS total_conversion_value
+        FROM silver_campaigns_full
+        GROUP BY date
+      )
+
+quality:
+  row_rules: []
+  dataset_rules: []
+
+downstream:
+  - type: semantic_model
+    name: "sm_rideflow_gold"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_executive"
+        platform: powerbi
+        managed: false
+  - type: semantic_model
+    name: "sm_rideflow_marketing"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_campaign_roi"
+        platform: powerbi
+        managed: false
