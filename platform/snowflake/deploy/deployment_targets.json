@@ -6,7 +6,7 @@
       "compute": "RIDEFLOW_WH",
       "compute_pool": "RIDEFLOW_POOL",
       "container": "RIDEFLOW_DEV",
-      "engine_version": "1.88.0",
+      "engine_version": "1.88.1",
       "engine_wheel": null,
       "landing_root": "@RIDEFLOW_DEV_{domain}.FILES.LANDING/{system}",
       "log_root": "@RIDEFLOW_DEV.\"pipeline\".\"lakelogic_logs\"",
