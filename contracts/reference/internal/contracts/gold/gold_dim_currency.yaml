@@ -1,0 +1,84 @@
+version: 1.0.0
+
+info:
+  data_product: reference_data
+  data_product_output: dim_currency
+  title: Gold — Dim Currency
+  target_layer: gold
+  description: A reference list of currencies, each identified by the short code used
+    to match currency details to transactions and balances, with a placeholder entry
+    standing in when a currency is unknown. Each record also notes the source system
+    it came from, so its origin can be traced.
+  table_name: '{gold_layer}_dim_currency'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: currency_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: currency_code
+    type: string
+    required: true
+    description: The short code that identifies each currency (for example, the three-letter
+      standard used in pricing and reporting). This is the key used to match currency
+      details to transactions and balances.
+  - name: currency_numeric
+    type: Int64
+    required: false
+    description: The numeric identifier for the currency, used by some systems and
+      payment networks in place of the short code. Helps reconcile records that reference
+      currencies by number rather than by name.
+  - name: currency_name
+    type: string
+    required: false
+    description: The human-readable name of the currency as it should appear in reports
+      and to business users. Useful for labelling and for confirming the code maps
+      to the expected currency.
+  - name: symbol
+    type: string
+    required: false
+    description: The familiar symbol used to display amounts in this currency (such
+      as the dollar or euro sign). Supports readable presentation of monetary values
+      in statements and dashboards.
+  - name: minor_units
+    type: Int64
+    required: false
+    description: How many decimal places the currency is normally divided into (for
+      example, 2 for cents). Guides correct rounding and display of amounts so values
+      are shown at the right precision.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_currency
+
+primary_key:
+- currency_code
+
+materialization:
+  scd1:
+    surrogate_key: currency_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_internal_dim_currency_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''internal'''

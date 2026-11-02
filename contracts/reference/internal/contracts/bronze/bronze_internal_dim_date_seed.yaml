@@ -1,0 +1,77 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Date Seed
+  target_layer: bronze
+  description: A calendar reference covering individual dates, with each row carrying
+    the year, quarter, month, day and weekday breakdowns used to group and compare
+    business results over time. It also flags weekends and recognised United States
+    and United Kingdom public holidays, so reporting can separate working days from
+    non-working ones. The contract describes it as an internal seed, so the source
+    of the calendar values is not identified beyond that.
+  table_name: '{bronze_layer}_internal_dim_date_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: date_key
+    type: Int64
+    description: A unique number that identifies each calendar date, used to link
+      this date to related business records.
+  - name: full_date
+    type: string
+    description: The actual calendar date this row describes, used for reporting and
+      sorting by day.
+  - name: year
+    type: Int64
+    description: The calendar year the date falls in, used to group and compare results
+      year over year.
+  - name: quarter
+    type: Int64
+    description: The business quarter (1–4) the date falls in, used for quarterly
+      reporting.
+  - name: month
+    type: Int64
+    description: The month number (1–12) the date falls in, used for monthly reporting
+      and trends.
+  - name: month_name
+    type: string
+    description: The readable name of the month, making reports easier to understand
+      at a glance.
+  - name: day
+    type: Int64
+    description: The day of the month (1–31) the date falls on.
+  - name: day_of_week
+    type: Int64
+    description: The numbered day of the week, used to analyse patterns by weekday.
+  - name: day_name
+    type: string
+    description: The readable name of the weekday, making day-of-week reporting easier
+      to interpret.
+  - name: is_weekend
+    type: boolean
+    description: Indicates whether the date falls on a weekend, useful for separating
+      business days from non-working days.
+  - name: iso_week
+    type: Int64
+    description: The international standard week number of the year, used for weekly
+      reporting and comparisons.
+  - name: is_holiday_us
+    type: boolean
+    description: Indicates whether the date is a recognised United States public holiday,
+      useful for adjusting business reporting.
+  - name: is_holiday_uk
+    type: boolean
+    description: Indicates whether the date is a recognised United Kingdom public
+      holiday, useful for adjusting business reporting.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_date_seed'
+  format: csv
+
+primary_key:
+- date_key
+
+dataset: bronze_internal_dim_date_seed

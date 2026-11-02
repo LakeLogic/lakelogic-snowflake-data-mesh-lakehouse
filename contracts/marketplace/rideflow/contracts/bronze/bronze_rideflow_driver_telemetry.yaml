@@ -1,0 +1,80 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Rideflow Driver Telemetry
+  target_layer: bronze
+  description: Driver location pings from the Rideflow marketplace, capturing where
+    a driver was, their speed, heading and GPS precision at the moment of each reading,
+    along with their availability status and the city it relates to. Readings link
+    to a specific driver and, where applicable, to the trip they were on, so activity
+    can be traced over time. Latitude and longitude are flagged as personal data,
+    making precise driver location the most sensitive content here.
+  table_name: '{bronze_layer}_rideflow_driver_telemetry'
+  domain: marketplace
+  system: rideflow
+
+model:
+  fields:
+  - name: telemetry_id
+    type: string
+    description: Unique identifier for each driver telemetry reading, used to trace
+      and de-duplicate individual location pings.
+  - name: driver_id
+    type: string
+    description: Identifies the driver the telemetry reading belongs to, linking activity
+      to a specific driver on the marketplace.
+  - name: gps_lat
+    type: Float64
+    pii: true
+    classification: gps_coordinate
+    description: Latitude of the driver's location at the time of the reading; sensitive
+      location data used for tracking and trip analysis.
+  - name: gps_lng
+    type: Float64
+    pii: true
+    classification: gps_coordinate
+    description: Longitude of the driver's location at the time of the reading; sensitive
+      location data used for tracking and trip analysis.
+  - name: speed_kmh
+    type: Float64
+    description: The driver's speed in kilometres per hour when the reading was taken,
+      useful for trip and safety analysis.
+  - name: heading
+    type: string
+    description: The direction the driver was travelling at the time of the reading,
+      typically expressed as a compass bearing.
+  - name: accuracy_meters
+    type: string
+    description: How precise the reported location is, in metres; a smaller value
+      means a more reliable position.
+  - name: trip_id
+    type: string
+    description: Identifies the trip the driver was on when the reading was taken,
+      connecting telemetry to a specific journey.
+  - name: status
+    type: string
+    description: The driver's current state at the time of the reading, such as available,
+      on-trip, or offline.
+  - name: city_code
+    type: string
+    description: Short code for the city the reading relates to, used for regional
+      reporting and filtering.
+  - name: timestamp
+    type: string
+    description: The date and time the telemetry reading was recorded, used to order
+      and analyse driver activity over time.
+
+source:
+  type: stream
+  path: '{landing_root}/driver_telemetry'
+  format: csv
+  options:
+    kind: files
+    checkpoint: '{log_root}/_checkpoints/driver_telemetry'
+    trigger: available_now
+    header: true
+
+primary_key:
+- telemetry_id
+
+dataset: bronze_rideflow_driver_telemetry

@@ -1,0 +1,165 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Receipts
+  target_layer: gold
+  description: 'grain: one row per driver expense receipt'
+  table_name: '{gold_layer}_fact_receipts'
+  system: driver_expenses
+  domain: payments
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    required: true
+    description: Path of the source document in the landing volume.
+  - name: receipt_number
+    type: string
+    required: true
+    description: Receipt number printed by the merchant.
+  - name: total_amount
+    type: decimal(10,2)
+    required: false
+    description: 'Measure candidate: sum of ''total_amount'' (needs confirmation).'
+  - name: vat_amount
+    type: decimal(10,2)
+    required: false
+    description: 'Measure candidate: sum of ''vat_amount'' (needs confirmation).'
+  - name: receipt_time
+    type: timestamp
+    required: false
+    description: Date and time printed on the receipt.
+  - name: merchant
+    type: string
+    required: false
+    description: Merchant named on the receipt.
+  - name: service
+    type: string
+    required: false
+    description: Service the receipt is for.
+  - name: driver_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_driver_profiles
+      column: driver_profiles_sk
+    description: Surrogate key of gold_dim_driver_profiles, looked up as of receipt_time;
+      '-1' when the dimension does not know the row.
+  - name: city_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_city_master
+      column: city_master_sk
+    description: Surrogate key of gold_dim_city_master, looked up as of receipt_time;
+      '-1' when the dimension does not know the row.
+  - name: service_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_service
+      column: service_sk
+    description: Surrogate key of gold_dim_service, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_receipts
+
+primary_key:
+- file_path
+- receipt_number
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - file_path
+      - receipt_number
+      name: file_path_receipt_number_unique
+      category: uniqueness
+      description: No two rows share the same file_path, receipt_number.
+  - name: driver_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE driver_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose driver_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: city_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE city_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose city_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: service_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE service_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose service_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.file_path,
+      r.receipt_number,
+      r.receipt_time,
+      r.merchant,
+      r.service,
+      r.total_amount AS total_amount,
+      r.vat_amount AS vat_amount,
+      COALESCE(d1.driver_profiles_sk, '-1') AS driver_sk,
+      COALESCE(d2.city_master_sk, '-1') AS city_sk,
+      COALESCE(d3.service_sk, '-1') AS service_sk
+    FROM source r
+    LEFT JOIN gold_dim_driver_profiles d1
+      ON  r.driver_id = d1.driver_id
+      AND r.receipt_time >= d1.effective_from
+      AND r.receipt_time < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_city_master d2
+      ON  r.branch_city_code = d2.city_code
+      AND r.receipt_time >= d2.effective_from
+      AND r.receipt_time < COALESCE(d2.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_service d3
+      ON  r.service = d3.service
+- phase: pre
+  derive:
+    field: system
+    sql: '''driver_expenses'''
+
+links:
+- name: gold_dim_driver_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_driver_profiles
+- name: gold_dim_city_master
+  type: table
+  path: table:`{domain_catalog_prefix}_reference`.{gold_layer}.{gold_layer}_dim_city_master
+- name: gold_dim_service
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_service
+
+upstream:
+- gold_dim_city_master
+- gold_dim_driver_profiles
+- gold_dim_service
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_driver_expenses_receipts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

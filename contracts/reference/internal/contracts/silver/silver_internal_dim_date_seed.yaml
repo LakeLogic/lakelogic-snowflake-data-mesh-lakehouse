@@ -1,0 +1,165 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Dim Date Seed
+  target_layer: silver
+  description: A calendar reference covering individual dates with their year, quarter,
+    month, day and ISO week, plus readable month and weekday names for reporting.
+    Each date is flagged for weekend and for recognised United States and United Kingdom
+    public holidays, so business-day reporting can be adjusted. The dates are seeded
+    internally rather than sourced from an operational system.
+  table_name: '{silver_layer}_internal_dim_date_seed'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: date_key
+    type: Int64
+    required: true
+    description: A unique number that identifies each calendar date, used to link
+      this date to related business records.
+  - name: full_date
+    type: date
+    required: true
+    description: The actual calendar date this row describes, used for reporting and
+      sorting by day.
+  - name: year
+    type: Int64
+    required: true
+    description: The calendar year the date falls in, used to group and compare results
+      year over year.
+  - name: quarter
+    type: Int64
+    required: true
+    description: The business quarter (1–4) the date falls in, used for quarterly
+      reporting.
+  - name: month
+    type: Int64
+    required: true
+    description: The month number (1–12) the date falls in, used for monthly reporting
+      and trends.
+  - name: month_name
+    type: string
+    required: true
+    description: The readable name of the month, making reports easier to understand
+      at a glance.
+  - name: day
+    type: Int64
+    required: true
+    description: The day of the month (1–31) the date falls on.
+  - name: day_of_week
+    type: Int64
+    required: true
+    description: The numbered day of the week, used to analyse patterns by weekday.
+  - name: day_name
+    type: string
+    required: true
+    description: The readable name of the weekday, making day-of-week reporting easier
+      to interpret.
+  - name: is_weekend
+    type: boolean
+    required: true
+    description: Indicates whether the date falls on a weekend, useful for separating
+      business days from non-working days.
+  - name: iso_week
+    type: Int64
+    required: true
+    description: The international standard week number of the year, used for weekly
+      reporting and comparisons.
+  - name: is_holiday_us
+    type: boolean
+    required: true
+    description: Indicates whether the date is a recognised United States public holiday,
+      useful for adjusting business reporting.
+  - name: is_holiday_uk
+    type: boolean
+    required: true
+    description: Indicates whether the date is a recognised United Kingdom public
+      holiday, useful for adjusting business reporting.
+
+primary_key:
+- date_key
+
+quality:
+  row_rules:
+  - name: date_key_not_null
+    sql: date_key IS NOT NULL
+    category: completeness
+    description: date_key is always present (never null).
+  - name: day_not_null
+    sql: day IS NOT NULL
+    category: completeness
+    description: day is always present (never null).
+  - name: day_name_not_null
+    sql: day_name IS NOT NULL
+    category: completeness
+    description: day_name is always present (never null).
+  - name: day_name_accepted_values
+    sql: day_name IS NULL OR day_name IN ('Friday', 'Monday', 'Saturday', 'Sunday',
+      'Thursday', 'Tuesday', 'Wednesday')
+    category: validity
+    description: 'day_name is one of: Friday, Monday, Saturday, Sunday, Thursday,
+      Tuesday, Wednesday when present.'
+  - name: day_of_week_not_null
+    sql: day_of_week IS NOT NULL
+    category: completeness
+    description: day_of_week is always present (never null).
+  - name: full_date_not_null
+    sql: full_date IS NOT NULL
+    category: completeness
+    description: full_date is always present (never null).
+  - name: is_holiday_uk_not_null
+    sql: is_holiday_uk IS NOT NULL
+    category: completeness
+    description: is_holiday_uk is always present (never null).
+  - name: is_holiday_us_not_null
+    sql: is_holiday_us IS NOT NULL
+    category: completeness
+    description: is_holiday_us is always present (never null).
+  - name: is_weekend_not_null
+    sql: is_weekend IS NOT NULL
+    category: completeness
+    description: is_weekend is always present (never null).
+  - name: iso_week_not_null
+    sql: iso_week IS NOT NULL
+    category: completeness
+    description: iso_week is always present (never null).
+  - name: month_not_null
+    sql: month IS NOT NULL
+    category: completeness
+    description: month is always present (never null).
+  - name: month_name_not_null
+    sql: month_name IS NOT NULL
+    category: completeness
+    description: month_name is always present (never null).
+  - name: month_name_accepted_values
+    sql: month_name IS NULL OR month_name IN ('April', 'February', 'January', 'March')
+    category: validity
+    description: 'month_name is one of: April, February, January, March when present.'
+  - name: quarter_not_null
+    sql: quarter IS NOT NULL
+    category: completeness
+    description: quarter is always present (never null).
+  - name: year_not_null
+    sql: year IS NOT NULL
+    category: completeness
+    description: year is always present (never null).
+  dataset_rules:
+  - unique:
+      columns:
+      - date_key
+      name: date_key_unique
+      category: uniqueness
+      description: No two rows share the same date_key.
+
+dataset: silver_internal_dim_date_seed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_dim_date_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

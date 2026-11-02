@@ -1,0 +1,82 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Meta Ads Campaigns
+  target_layer: bronze
+  description: Campaign-level Meta advertising performance broken out by ad set and
+    reporting date, covering how often ads were shown, how often people clicked them,
+    and the money spent in the account currency. Alongside those reach and cost measures
+    sit the counts of valuable actions attributed to each campaign, plus a raw record
+    of the likes, shares and link clicks people took after seeing the ads. Campaign
+    and ad set names are carried through as the marketing team set them up, so the
+    figures can be tied back to the campaigns and audience or budget groups they belong
+    to.
+  table_name: '{bronze_layer}_meta_ads_campaigns'
+  domain: marketing
+  system: meta_ads
+
+model:
+  fields:
+  - name: campaign_id
+    type: string
+    description: Unique identifier for the Meta advertising campaign. Used to link
+      this campaign's performance to other marketing reports.
+  - name: campaign_name
+    type: string
+    description: The human-readable name of the Meta advertising campaign, as set
+      up by the marketing team.
+  - name: adset_id
+    type: string
+    description: Unique identifier for the ad set within the campaign. Ad sets group
+      ads that share the same budget and targeting.
+  - name: adset_name
+    type: string
+    description: The human-readable name of the ad set, describing the audience or
+      budget group it represents.
+  - name: date
+    type: string
+    description: The reporting date for this row of campaign performance data.
+  - name: impressions
+    type: string
+    description: How many times the campaign's ads were shown to people. A key measure
+      of reach and visibility.
+  - name: clicks
+    type: string
+    description: How many times people clicked on the campaign's ads. Indicates engagement
+      and interest.
+  - name: spend
+    type: Float64
+    description: The amount of money spent on the campaign, in the account currency.
+      Core input for cost and return calculations.
+  - name: actions_json
+    type: string
+    description: A structured record of the various actions people took after seeing
+      the ads (such as likes, shares, or link clicks), kept in raw form for detailed
+      analysis.
+  - name: conversions
+    type: string
+    description: The number of valuable actions (such as purchases or sign-ups) attributed
+      to the campaign. Central to measuring marketing effectiveness.
+  - name: currency
+    type: string
+    description: The currency in which spend and other monetary values are reported,
+      so amounts can be compared and converted correctly.
+
+source:
+  type: landing
+  path: '{landing_root}/campaigns'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- campaign_id
+- adset_id
+- date
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_meta_ads_campaigns

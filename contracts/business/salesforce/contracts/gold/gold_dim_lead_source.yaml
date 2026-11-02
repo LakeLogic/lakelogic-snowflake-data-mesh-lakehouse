@@ -1,0 +1,67 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Lead Source
+  target_layer: gold
+  description: 'grain: one row per LeadSource'
+  table_name: '{gold_layer}_dim_lead_source'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: LeadSource_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: LeadSource
+    type: string
+    required: true
+    description: Where the opportunity's lead came from.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_lead_source
+
+primary_key:
+- LeadSource
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - LeadSource
+      name: LeadSource_unique
+      category: uniqueness
+      description: No two rows share the same LeadSource.
+
+materialization:
+  scd1:
+    surrogate_key: LeadSource_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT LeadSource
+    FROM source
+    WHERE LeadSource IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_opportunities
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

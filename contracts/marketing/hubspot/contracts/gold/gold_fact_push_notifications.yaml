@@ -1,0 +1,162 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Push Notifications
+  target_layer: gold
+  description: Individual push notifications sent to customers, each recorded with
+    when it was sent, when it reached the customer's device and when it was opened,
+    so delivery and engagement can be tracked per send. The records carry the device
+    address used for delivery and the marketing campaign the message belongs to, and
+    they link back to the rider profile and platform involved, with placeholder values
+    marking notifications where no matching rider or platform was found. Records also
+    note the source system they came from and the calendar date of delivery for day-by-day
+    reporting.
+  table_name: '{gold_layer}_fact_push_notifications'
+  system: hubspot
+  domain: marketing
+
+model:
+  fields:
+  - name: notification_id
+    type: string
+    required: true
+    description: Unique identifier for each push notification sent, used to track
+      and reconcile individual sends.
+  - name: notification_count
+    type: integer
+    required: false
+    description: Number of push notifications in the row.
+  - name: sent_at
+    type: timestamp
+    required: false
+    description: When the notification was sent out, marking the start of the delivery
+      journey.
+  - name: delivered_at
+    type: timestamp
+    required: false
+    description: When the notification successfully reached the customer's device,
+      showing whether it was actually received.
+  - name: opened_at
+    type: timestamp
+    required: false
+    description: When the customer opened the notification, indicating engagement
+      with the message.
+  - name: campaign_name
+    type: string
+    required: false
+    description: The marketing campaign this notification belongs to, so performance
+      can be grouped and compared by campaign.
+  - name: device_token
+    type: string
+    required: false
+    description: The device address the notification was delivered to, used to confirm
+      reachability of the customer's phone or tablet.
+  - name: rider_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_rider_profiles
+      column: rider_profiles_sk
+    description: Surrogate key of gold_dim_rider_profiles, looked up as of sent_at;
+      '-1' when the dimension does not know the row.
+  - name: platform_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_hubspot_dim_platform
+      column: platform_sk
+    description: Surrogate key of gold_hubspot_dim_platform, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: delivered_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `delivered_at`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_push_notifications
+
+primary_key:
+- notification_id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - notification_id
+      name: notification_id_unique
+      category: uniqueness
+      description: No two rows share the same notification_id.
+  - name: rider_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE rider_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose rider_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: platform_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE platform_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose platform_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.notification_id,
+      r.sent_at,
+      r.delivered_at,
+      r.opened_at,
+      r.campaign_name,
+      r.device_token,
+      CASE WHEN r.notification_id IS NOT NULL THEN 1 ELSE 0 END AS notification_count,
+      COALESCE(d1.rider_profiles_sk, '-1') AS rider_sk,
+      COALESCE(d2.platform_sk, '-1') AS platform_sk,
+      CAST(r.delivered_at AS DATE) AS delivered_date
+    FROM source r
+    LEFT JOIN gold_dim_rider_profiles d1
+      ON  r.rider_id = d1.rider_id
+      AND r.sent_at >= d1.effective_from
+      AND r.sent_at < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_hubspot_dim_platform d2
+      ON  r.platform = d2.platform
+- phase: pre
+  derive:
+    field: system
+    sql: '''hubspot'''
+
+links:
+- name: gold_dim_rider_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_rider_profiles
+- name: gold_hubspot_dim_platform
+  type: table
+  path: table:{gold_root}.{gold_layer}_hubspot_dim_platform
+
+upstream:
+- gold_dim_rider_profiles
+- gold_hubspot_dim_platform
+
+materialization:
+  fact:
+    type: accumulating_snapshot
+    milestone_dates:
+    - sent_at
+    - delivered_at
+    - opened_at
+  partition_by:
+  - delivered_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_hubspot_push_notifications
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

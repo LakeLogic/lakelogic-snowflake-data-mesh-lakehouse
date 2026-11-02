@@ -1,0 +1,72 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Event Name
+  target_layer: gold
+  description: A reference list of the user actions and events tracked in Google Analytics,
+    such as page views and purchases, each given a surrogate key so it can be joined
+    to fact tables and used to group and analyse user behaviour. Records carry the
+    originating platform, and a key of '-1' marks events whose name could not be matched.
+    The content comes from Google Analytics event tracking.
+  table_name: '{gold_layer}_google_analytics_dim_event_name'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: event_name_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: event_name
+    type: string
+    required: true
+    description: The name of the user action or event tracked in Google Analytics,
+      such as a page view or purchase, used to group and analyze user behavior.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_google_analytics_dim_event_name
+
+primary_key:
+- event_name
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - event_name
+      name: event_name_unique
+      category: uniqueness
+      description: No two rows share the same event_name.
+
+materialization:
+  scd1:
+    surrogate_key: event_name_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT event_name
+    FROM source
+    WHERE event_name IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''google_analytics'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

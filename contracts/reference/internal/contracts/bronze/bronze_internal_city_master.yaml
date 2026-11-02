@@ -1,0 +1,70 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal City Master
+  target_layer: bronze
+  description: A reference list of cities used across internal systems, each identified
+    by a short code and carrying its display name, country, standard time zone and
+    the currency normally used for business there. Geographic boundaries are held
+    for each city so locations can be tested for being inside the city area, and opening
+    and closing dates record when a market became or stopped being active. All fields
+    are nullable in the contract, with country required by a completeness rule.
+  table_name: '{bronze_layer}_internal_city_master'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: city_code
+    type: string
+    description: The short code that identifies this city in internal systems; used
+      to link city details to other records.
+  - name: city_name
+    type: string
+    description: The display name of the city as it should appear to business users
+      and reports.
+  - name: country_code
+    type: string
+    description: The code for the country this city belongs to, used for grouping
+      and regional reporting.
+  - name: timezone
+    type: string
+    description: The standard time zone for the city, used to schedule activities
+      and interpret timestamps correctly.
+  - name: default_currency
+    type: string
+    description: The currency normally used for business in this city, useful for
+      pricing and financial reporting.
+  - name: geofence_wkt
+    type: string
+    description: The geographic boundary of the city, used to determine whether a
+      location falls inside the city area.
+  - name: launched_at
+    type: string
+    description: The date the city became active for business; helps track when a
+      market opened.
+  - name: sunset_at
+    type: string
+    description: The date the city stopped being active for business, if applicable;
+      used to exclude closed markets from current reporting.
+
+source:
+  type: landing
+  path: '{landing_root}/city_master'
+  format: csv
+
+primary_key:
+- city_code
+
+quality:
+  row_rules:
+  - name: country_code_partition_not_null
+    sql: country_code IS NOT NULL
+    category: completeness
+    description: country_code is always present (never null).
+
+materialization:
+  partition_by:
+  - country_code
+
+dataset: bronze_internal_city_master

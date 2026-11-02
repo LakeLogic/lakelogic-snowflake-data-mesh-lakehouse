@@ -1,0 +1,158 @@
+version: 1.0.0
+
+info:
+  data_product: acquisition_cost
+  data_product_output: mart_acquisition_cost
+  title: "Gold — Mart Acquisition Cost"
+  table_name: '{gold_layer}_mart_acquisition_cost'
+  description: >
+    Customer Acquisition Cost (CAC) per (kpi_date, channel, campaign).
+    Channel spend comes from the three marketing campaign Silver tables
+    (google_ads, meta_ads, hubspot email + push); attributed new-rider
+    count comes from silver_rideflow_rider_profiles joined on
+    acquisition_campaign_id. CAC = spend ÷ attributed_riders.
+  target_layer: gold
+  domain: shared
+  system: shared
+
+primary_key: [kpi_date, channel, campaign_id]
+
+model:
+  fields:
+    # ── Dimensions ──
+    - name: kpi_date
+      type: date
+      description: Calendar day the measures are for.
+      required: true
+    - name: channel
+      type: string
+      required: true
+      description: "google_ads | meta_ads | hubspot_email"
+    - name: campaign_id
+      type: string
+      description: Ad or email campaign ID in its source platform.
+      required: true
+    - name: campaign_name
+      type: string
+      description: Name of the campaign.
+    # ── Facts ──
+    - name: spend_amount
+      type: float
+      description: "Channel ad spend in GBP for the day."
+    - name: impressions
+      type: integer
+      description: Impressions of the campaign that day.
+    - name: clicks
+      type: integer
+      description: Clicks on the campaign that day.
+    - name: attributed_new_riders
+      type: integer
+      description: "Riders whose signup_date matches kpi_date AND whose acquisition_campaign_id matches."
+    - name: cost_per_acquisition
+      type: float
+      description: "spend_amount ÷ NULLIF(attributed_new_riders, 0)."
+    - name: conversion_rate
+      type: float
+      description: "attributed_new_riders ÷ NULLIF(clicks, 0)."
+    - name: system
+      type: string
+      required: true
+      description: Source system this row came from
+
+source:
+  type: table
+  # Primary source is google_ads — the other two channels are unioned in
+  # via the union transformation below so we get a single table keyed by
+  # (kpi_date, channel, campaign_id).
+  path: "table:`{domain_catalog_prefix}_marketing`.silver.silver_google_ads_campaigns"
+  # Stays full (deliberate): an aggregate over its sources. An incremental batch
+  # holds only new rows, so re-grouping it would overwrite a complete aggregate
+  # with a partial one; the engine has no recompute-affected-keys mode.
+  load_mode: full
+
+transformations:
+  # Cross-channel spend union; all physical LINK reads. No rider->campaign
+  # attribution exists in source data, so CAC fields are left NULL.
+  - phase: pre
+    sql: |
+      WITH g AS (
+        SELECT to_date(date) AS kpi_date, 'google_ads' AS channel, 'google_ads' AS system, campaign_id, campaign_name,
+               CAST(cost AS double) AS spend, CAST(impressions AS int) AS impressions, CAST(clicks AS int) AS clicks
+        FROM mkt_google
+      ),
+      m AS (
+        SELECT to_date(date) AS kpi_date, 'meta_ads' AS channel, 'meta_ads' AS system, campaign_id, campaign_name,
+               CAST(spend AS double) AS spend, CAST(impressions AS int) AS impressions, CAST(clicks AS int) AS clicks
+        FROM silver_meta_ads_campaigns
+      ),
+      h AS (
+        SELECT to_date(sent_at) AS kpi_date, 'hubspot_email' AS channel, 'hubspot' AS system, campaign_id, campaign_name,
+               0.0 AS spend, 1 AS impressions,
+               CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END AS clicks
+        FROM silver_hubspot_email_campaigns
+      ),
+      u AS (SELECT * FROM g UNION ALL SELECT * FROM m UNION ALL SELECT * FROM h)
+      SELECT kpi_date, channel, campaign_id, system,
+             MAX(campaign_name)            AS campaign_name,
+             SUM(spend)                    AS spend_amount,
+             CAST(SUM(impressions) AS int) AS impressions,
+             CAST(SUM(clicks) AS int)      AS clicks,
+             CAST(NULL AS int)             AS attributed_new_riders,
+             CAST(NULL AS double)          AS cost_per_acquisition,
+             CAST(NULL AS double)          AS conversion_rate
+      FROM u
+      GROUP BY kpi_date, channel, campaign_id, system
+
+quality:
+  row_rules:
+    - name: spend_non_negative
+      category: validity
+      sql: "spend_amount IS NULL OR spend_amount >= 0"
+    - name: valid_channel
+      category: validity
+      sql: "channel IN ('google_ads','meta_ads','hubspot_email')"
+    - name: clicks_le_impressions
+      category: consistency
+      sql: "impressions IS NULL OR clicks IS NULL OR clicks <= impressions"
+  dataset_rules: []
+
+materialization:
+  strategy: overwrite
+  format: delta
+
+# Cross-domain link registrations — each join `reference` above resolves to
+# a registered UC table view. Cross-schema reads (no ADLS in this demo).
+links:
+  - name: mkt_google
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketing`.silver.silver_google_ads_campaigns"
+  - name: silver_meta_ads_campaigns
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketing`.silver.silver_meta_ads_campaigns"
+  - name: silver_hubspot_email_campaigns
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketing`.silver.silver_hubspot_email_campaigns"
+
+downstream:
+  - type: semantic_model
+    name: "sm_rideflow_gold"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_executive"
+        platform: powerbi
+        managed: false
+  - type: semantic_model
+    name: "sm_rideflow_marketing"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_acquisition_cost"
+        platform: powerbi
+        managed: false
+      - type: report
+        name: "rpt_rideflow_channel_spend"
+        platform: powerbi
+        managed: false

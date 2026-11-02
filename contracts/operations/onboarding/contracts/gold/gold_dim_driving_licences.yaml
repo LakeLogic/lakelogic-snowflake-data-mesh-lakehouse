@@ -1,0 +1,105 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Driving Licences (SCD2)
+  target_layer: gold
+  description: 'grain: one row per driver licence record'
+  table_name: '{gold_layer}_dim_driving_licences'
+  system: onboarding
+  domain: operations
+
+model:
+  fields:
+  - name: driving_licences_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key and the version start,
+      written by the materializer; ''-1'' is the unknown member.'
+  - name: driver_id
+    type: string
+    required: true
+    description: RideFlow driver the record belongs to.
+  - name: licence_no
+    type: string
+    required: true
+    pii: true
+    classification: licence_id
+    description: Driving licence number as printed on the document.
+  - name: holder_name
+    type: string
+    required: false
+    description: Name of the licence holder as printed on the document.
+  - name: expiry_date
+    type: date
+    required: false
+    description: Date the licence expires.
+  - name: licence_class
+    type: string
+    required: false
+    description: Vehicle class the licence covers.
+  - name: issuing_city
+    type: string
+    required: false
+    description: City that issued the licence.
+  - name: file_path
+    type: string
+    required: false
+    description: Path of the source document in the landing volume.
+  - name: effective_from
+    type: timestamp
+    required: false
+    description: SCD2 effective from, written by the materializer.
+  - name: effective_to
+    type: timestamp
+    required: false
+    description: SCD2 effective to, written by the materializer.
+  - name: is_current
+    type: boolean
+    required: false
+    description: SCD2 current flag, written by the materializer.
+  - name: version_number
+    type: long
+    required: false
+    description: SCD2 version column, written by the materializer.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_driving_licences
+
+primary_key:
+- driver_id
+- licence_no
+
+materialization:
+  strategy: scd2
+  scd2:
+    surrogate_key: driving_licences_sk
+    surrogate_key_strategy: hash
+    effective_from_field: effective_from
+    effective_to_field: effective_to
+    current_flag_field: is_current
+    version_column: version_number
+    track_columns:
+    - expiry_date
+    - licence_class
+    - issuing_city
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_onboarding_driving_licences
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''onboarding'''

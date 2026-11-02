@@ -1,0 +1,80 @@
+version: 1.0.0
+
+info:
+  title: Silver — Trust Safety Incident Reports
+  target_layer: silver
+  table_name: '{silver_layer}_trust_safety_incident_reports'
+  system: trust_safety
+  domain: operations
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    required: false
+    description: Path of the source document in the landing volume.
+  - name: incident_id
+    type: string
+    required: true
+    description: ID of the incident report.
+  - name: trip_id
+    type: string
+    required: false
+    description: Trip the incident relates to.
+  - name: driver_id
+    type: string
+    required: false
+    description: RideFlow driver the record belongs to.
+  - name: incident_datetime
+    type: timestamp
+    required: false
+    description: When the incident happened.
+  - name: location
+    type: string
+    required: false
+    description: Where the incident happened, as reported.
+  - name: incident_type
+    type: string
+    required: false
+    description: Type of incident reported.
+  - name: estimated_cost
+    type: double
+    required: false
+    description: Estimated cost of the incident, as reported.
+  - name: reported_by
+    type: string
+    required: false
+    description: Who reported the incident.
+  - name: what_happened
+    type: string
+    required: false
+    description: Free-text account of the incident from the report.
+
+materialization:
+  strategy: overwrite
+
+quality:
+  row_rules:
+  - name: estimated_cost_range_min
+    sql: estimated_cost IS NULL OR estimated_cost >= 0
+    category: validity
+    description: estimated_cost is at least 0 when present.
+  - name: estimated_cost_range_max
+    sql: estimated_cost IS NULL OR estimated_cost <= 1000000
+    category: validity
+    description: estimated_cost is at most 1000000 when present.
+  - name: incident_id_not_null
+    sql: incident_id IS NOT NULL
+    category: completeness
+    description: incident_id is always present (never null).
+
+dataset: silver_trust_safety_incident_reports
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_trust_safety_incident_reports
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

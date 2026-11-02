@@ -1,0 +1,89 @@
+version: 1.0.0
+
+info:
+  title: Silver — Hubspot Push Notifications
+  target_layer: silver
+  description: Individual push notifications sent to customers as part of marketing
+    campaigns, recording which campaign each message belonged to and when it was sent,
+    delivered and opened, so engagement can be compared across campaigns and device
+    platforms. Each record is tied to a customer and to the device address the message
+    was delivered to, which makes the recipient and their phone or tablet identifiable.
+  table_name: '{silver_layer}_hubspot_push_notifications'
+  system: hubspot
+  domain: marketing
+
+model:
+  fields:
+  - name: notification_id
+    type: string
+    required: true
+    description: Unique identifier for each push notification sent, used to track
+      and reconcile individual sends.
+  - name: rider_id
+    type: string
+    required: false
+    description: Identifies the customer or rider the notification was sent to, linking
+      the message to a person.
+  - name: device_token
+    type: string
+    required: false
+    description: The device address the notification was delivered to, used to confirm
+      reachability of the customer's phone or tablet.
+  - name: campaign_name
+    type: string
+    required: true
+    description: The marketing campaign this notification belongs to, so performance
+      can be grouped and compared by campaign.
+  - name: sent_at
+    type: timestamp
+    required: false
+    description: When the notification was sent out, marking the start of the delivery
+      journey.
+  - name: delivered_at
+    type: timestamp
+    required: false
+    description: When the notification successfully reached the customer's device,
+      showing whether it was actually received.
+  - name: opened_at
+    type: timestamp
+    required: false
+    description: When the customer opened the notification, indicating engagement
+      with the message.
+  - name: platform
+    type: string
+    required: false
+    description: The device platform (such as iOS or Android) the notification was
+      sent to, useful for comparing engagement across device types.
+
+primary_key:
+- notification_id
+
+quality:
+  row_rules:
+  - name: notification_id_not_null
+    sql: notification_id IS NOT NULL
+    category: completeness
+    description: notification_id is always present (never null).
+  - name: campaign_name_not_null
+    sql: campaign_name IS NOT NULL
+    category: completeness
+    description: campaign_name is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - notification_id
+    sort_by:
+    - sent_at
+    order: desc
+
+dataset: silver_hubspot_push_notifications
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_hubspot_push_notifications
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

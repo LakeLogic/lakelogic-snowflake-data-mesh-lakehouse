@@ -1,0 +1,98 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Driver Telemetry Daily
+  target_layer: gold
+  description: Daily driver telemetry from the rideflow marketplace system, keyed
+    by calendar day and carrying the average driving speed in kilometres per hour,
+    which can be used to spot unusually fast or slow driving patterns. Each row ties
+    to a shared marketplace calendar through a compact numeric date label, and records
+    the originating source system so data from different systems can be traced apart.
+  table_name: '{gold_layer}_fact_driver_telemetry_daily'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: activity_date
+    type: date
+    required: true
+    description: The calendar day this driver telemetry record covers; each row represents
+      one driver on one day.
+  - name: speed_kmh
+    type: float
+    required: false
+    description: The average driving speed recorded for the driver that day, in kilometres
+      per hour — useful for spotting unusually fast or slow driving patterns.
+  - name: date_key
+    type: integer
+    required: false
+    foreign_key:
+      contract: gold_dim_date
+      column: date_key
+    description: The day of activity_date as YYYYMMDD — the key of the date dimension.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_driver_telemetry_daily
+
+primary_key:
+- activity_date
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - activity_date
+      name: activity_date_unique
+      category: uniqueness
+      description: No two rows share the same activity_date.
+
+transformations:
+- phase: pre
+  sql: |-
+    WITH touched AS (
+      SELECT DISTINCT
+        CAST(timestamp AS DATE) AS _touched_0
+      FROM source
+    ),
+    r AS (
+      SELECT
+        CAST(timestamp AS DATE) AS activity_date,
+        AVG(speed_kmh) AS speed_kmh
+      FROM silver_rideflow_driver_telemetry_full
+      JOIN touched
+        ON CAST(timestamp AS DATE) = touched._touched_0
+      GROUP BY CAST(timestamp AS DATE)
+    )
+    SELECT
+      r.activity_date,
+      r.speed_kmh,
+      CAST(EXTRACT(YEAR FROM r.activity_date) AS BIGINT) * 10000 + CAST(EXTRACT(MONTH FROM r.activity_date) AS BIGINT) * 100 + CAST(EXTRACT(DAY FROM r.activity_date) AS BIGINT) AS date_key
+    FROM r
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+links:
+- name: silver_rideflow_driver_telemetry_full
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_driver_telemetry
+
+upstream: []
+
+materialization:
+  fact:
+    type: aggregate
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_driver_telemetry
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

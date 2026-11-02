@@ -1,0 +1,47 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Fx Rates Daily
+  target_layer: bronze
+  description: Daily foreign exchange rates, one per currency pair, giving the rate
+    used to convert an amount from a base currency into a quote currency on a given
+    calendar date. Each rate is traced to the upstream feed that supplied it, so the
+    origin of any conversion can be followed back. Every field is nullable, so the
+    completeness of dates, currency pairs and rate values is not guaranteed by the
+    contract.
+  table_name: '{bronze_layer}_internal_fx_rates_daily'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: rate_date
+    type: string
+    description: The calendar date the exchange rate applies to, used to line up FX
+      rates with the business events they affect.
+  - name: base_currency
+    type: string
+    description: The currency being converted from in this exchange rate pair.
+  - name: quote_currency
+    type: string
+    description: The currency being converted to in this exchange rate pair.
+  - name: rate
+    type: Float64
+    description: The exchange rate value used to convert one unit of the base currency
+      into the quote currency.
+  - name: source_feed
+    type: string
+    description: Identifies which upstream feed supplied this rate, so the origin
+      of each rate can be traced.
+
+source:
+  type: landing
+  path: '{landing_root}/fx_rates_daily'
+  format: csv
+
+primary_key:
+- rate_date
+- base_currency
+- quote_currency
+
+dataset: bronze_internal_fx_rates_daily

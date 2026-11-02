@@ -1,0 +1,73 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Driver Licences
+  target_layer: gold
+  description: Driver licence records sourced from the Checkr system, holding each
+    licence's number, the authority and jurisdiction that issued it, the vehicle classes
+    the holder may drive, and its expiry date, so expired or soon-to-expire licences
+    can be flagged. Every version of a record is kept with the dates it was active
+    and a marker for the current version, alongside a placeholder for unknown drivers.
+    Licence numbers are personal data.
+  table_name: '{gold_layer}_dim_driver_licences'
+  system: checkr
+  domain: operations
+
+model:
+  fields:
+  - name: driver_licences_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: file_path
+    type: string
+    required: true
+    description: Path of the source document in the landing volume.
+  - name: holder_name
+    type: string
+    required: true
+    description: Name of the licence holder as printed on the document.
+  - name: expiry_date
+    type: date
+    required: false
+    description: The date the licence stops being valid, used to flag expired or soon-to-expire
+      licences.
+  - name: vehicle_classes
+    type: string
+    required: false
+    description: The categories of vehicles the holder is permitted to drive, such
+      as cars or heavy goods vehicles.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_driver_licences
+
+primary_key:
+- file_path
+- holder_name
+
+materialization:
+  scd1:
+    surrogate_key: driver_licences_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_checkr_driver_licences
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''checkr'''

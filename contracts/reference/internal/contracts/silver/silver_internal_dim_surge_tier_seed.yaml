@@ -1,0 +1,106 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Dim Surge Tier Seed
+  target_layer: silver
+  description: A reference list of pricing surge tiers, each identified by a short
+    code and bounded by the lowest and highest price multipliers that apply while
+    the tier is in effect. Each tier also carries a human-readable label for display
+    and a flag indicating whether riders should be notified when that tier applies.
+    The contract does not state the originating system or how the values are sourced.
+  table_name: '{silver_layer}_internal_dim_surge_tier_seed'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: surge_tier_code
+    type: string
+    required: true
+    description: Short code identifying a pricing surge tier used in the reference
+      list. Used to link surge pricing rules to the correct tier.
+  - name: multiplier_min
+    type: float
+    required: true
+    description: Lowest price multiplier applied when this surge tier is in effect.
+      Defines the starting point of the tier's pricing range.
+    min: 0.0
+    max: 10.0
+  - name: multiplier_max
+    type: float
+    required: true
+    description: Highest price multiplier applied when this surge tier is in effect.
+      Defines the upper bound of the tier's pricing range.
+    min: 0.0
+    max: 10.0
+  - name: display_label
+    type: string
+    required: true
+    description: Human-readable name shown for this surge tier in customer-facing
+      or internal displays. Helps staff and customers recognise the tier.
+  - name: notify_rider
+    type: boolean
+    required: true
+    description: Indicates whether riders should be notified when this surge tier
+      applies. Supports customer communication decisions.
+
+primary_key:
+- surge_tier_code
+
+quality:
+  row_rules:
+  - name: surge_tier_code_not_null
+    sql: surge_tier_code IS NOT NULL
+    category: completeness
+    description: surge_tier_code is always present (never null).
+  - name: display_label_not_null
+    sql: display_label IS NOT NULL
+    category: completeness
+    description: display_label is always present (never null).
+  - name: multiplier_max_range_min
+    sql: multiplier_max IS NULL OR multiplier_max >= 0
+    category: validity
+    description: multiplier_max is at least 0 when present.
+  - name: multiplier_max_range_max
+    sql: multiplier_max IS NULL OR multiplier_max <= 10
+    category: validity
+    description: multiplier_max is at most 10 when present.
+  - name: multiplier_max_not_null
+    sql: multiplier_max IS NOT NULL
+    category: completeness
+    description: multiplier_max is always present (never null).
+  - name: multiplier_min_range_min
+    sql: multiplier_min IS NULL OR multiplier_min >= 0
+    category: validity
+    description: multiplier_min is at least 0 when present.
+  - name: multiplier_min_range_max
+    sql: multiplier_min IS NULL OR multiplier_min <= 10
+    category: validity
+    description: multiplier_min is at most 10 when present.
+  - name: multiplier_min_not_null
+    sql: multiplier_min IS NOT NULL
+    category: completeness
+    description: multiplier_min is always present (never null).
+  - name: notify_rider_not_null
+    sql: notify_rider IS NOT NULL
+    category: completeness
+    description: notify_rider is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - surge_tier_code
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+dataset: silver_internal_dim_surge_tier_seed
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_dim_surge_tier_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

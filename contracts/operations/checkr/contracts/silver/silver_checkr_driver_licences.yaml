@@ -1,0 +1,59 @@
+version: 1.0.0
+
+info:
+  title: Silver — Checkr Driver Licences
+  target_layer: silver
+  description: Driver licence records captured from Checkr background checks, holding
+    the holder's name, date of birth and licence number alongside the issuing authority
+    and jurisdiction, expiry date and the vehicle classes the holder is permitted
+    to drive. Each row traces back to the source document it was extracted from, and
+    the licence number is the identifier used to match a licence to the correct driver.
+    The licence number and date of birth are flagged as personal data.
+  table_name: '{silver_layer}_checkr_driver_licences'
+  system: checkr
+  domain: operations
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    required: false
+    description: Path of the source document in the landing volume.
+  - name: holder_name
+    type: string
+    required: false
+    description: Name of the licence holder as printed on the document.
+  - name: licence_number
+    type: string
+    required: false
+    pii: true
+    classification: licence_id
+    description: Driving licence number as printed on the document.
+  - name: date_of_birth
+    type: date
+    required: false
+    pii: true
+    classification: date_of_birth
+    description: Holder's date of birth as printed on the document.
+  - name: expiry_date
+    type: date
+    required: false
+    description: Date the licence expires.
+  - name: vehicle_classes
+    type: string
+    required: false
+    description: Vehicle classes the licence covers.
+
+materialization:
+  strategy: overwrite
+
+dataset: silver_checkr_driver_licences
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_checkr_driver_licences
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,182 @@
+version: 1.0.0
+
+info:
+  data_product: revenue_reporting
+  data_product_output: fact_revenue_daily
+  title: "Gold — Fact Revenue Daily"
+  table_name: '{gold_layer}_fact_revenue_daily'
+  description: >
+    Daily platform revenue normalized to GBP. Aggregates Stripe charges
+    (gross + commission + driver payout + refunds) attributed to Rideflow
+    trips for city / vehicle dimensions. One row per
+    (kpi_date, city_code, vehicle_type). Powers finance dashboards.
+  target_layer: gold
+  domain: shared
+  system: shared
+
+primary_key: [kpi_date, city_code, vehicle_type]
+
+model:
+  fields:
+    # ── Dimensions ──
+    - name: kpi_date
+      type: date
+      required: true
+      description: "Calendar date the charge settled (UTC)."
+    - name: city_code
+      type: string
+      description: "Joined from silver_rideflow_trip_completed via charge.trip_id → trip.city_code."
+    - name: vehicle_type
+      type: string
+      description: "Joined from silver_rideflow_trip_completed."
+    # ── Revenue facts ──
+    - name: gross_revenue_amount
+      type: float
+      description: "Sum of stripe_charges.amount in GBP."
+    - name: platform_commission_amount
+      type: float
+      description: "Platform take from gross (currently 25% of fare)."
+    - name: driver_payout_amount
+      type: float
+      description: "Sum of stripe_payouts.amount linked to today's trips."
+    - name: refund_amount
+      type: float
+      description: "Sum of stripe_refunds.amount (subtract from gross to get net)."
+    - name: refund_count
+      type: integer
+      description: Number of refunds on the day's charges.
+    - name: net_revenue_amount
+      type: float
+      description: "gross_revenue_amount - refund_amount."
+    - name: trip_count
+      type: integer
+      description: "Count of distinct charged trips (excludes cancelled)."
+    - name: currency
+      type: string
+      description: "Always 'GBP' — multi-currency conversion happens upstream at Silver."
+    - name: system
+      type: string
+      required: true
+      description: Source system this row came from
+
+source:
+  type: table
+  # Primary fact source. Joins are declared in `transformations` below.
+  path: "table:`{domain_catalog_prefix}_payments`.silver.silver_stripe_charges"
+  # Stays full (deliberate): an aggregate over its sources. An incremental batch
+  # holds only new rows, so re-grouping it would overwrite a complete aggregate
+  # with a partial one; the engine has no recompute-affected-keys mode.
+  load_mode: full
+
+transformations:
+  # Charges attributed to (city, vehicle) via trips + driver_profiles
+  # (vehicle_type lives on the driver, not the trip). All physical LINK reads.
+  - phase: pre
+    sql: |
+      WITH c AS (
+        SELECT to_date(pc.created_at)    AS kpi_date,
+               t.city_code               AS city_code,
+               dv.vehicle_type           AS vehicle_type,
+               t.driver_id               AS driver_id,
+               pc.trip_id                AS trip_id,
+               pc.charge_id              AS charge_id,
+               CAST(pc.amount AS double) AS amount
+        FROM pay_charges pc
+        JOIN silver_rideflow_trip_completed t ON pc.trip_id = t.trip_id
+        LEFT JOIN mp_drivers dv ON dv.driver_id = t.driver_id
+      ),
+      agg AS (
+        SELECT kpi_date, city_code, vehicle_type,
+               SUM(amount)             AS gross_revenue_amount,
+               COUNT(DISTINCT trip_id) AS trip_count
+        FROM c GROUP BY kpi_date, city_code, vehicle_type
+      ),
+      rf AS (
+        SELECT c.kpi_date, c.city_code, c.vehicle_type,
+               SUM(CAST(r.amount AS double)) AS refund_amount,
+               COUNT(r.refund_id)            AS refund_count
+        FROM c JOIN silver_stripe_refunds r ON r.charge_id = c.charge_id
+        GROUP BY c.kpi_date, c.city_code, c.vehicle_type
+      ),
+      pd AS (
+        SELECT driver_id, SUM(CAST(amount AS double)) AS driver_payout
+        FROM silver_stripe_payouts GROUP BY driver_id
+      ),
+      pg AS (
+        SELECT g.kpi_date, g.city_code, g.vehicle_type,
+               SUM(pd.driver_payout) AS driver_payout_amount
+        FROM (SELECT DISTINCT kpi_date, city_code, vehicle_type, driver_id FROM c) g
+        LEFT JOIN pd ON pd.driver_id = g.driver_id
+        GROUP BY g.kpi_date, g.city_code, g.vehicle_type
+      )
+      SELECT agg.kpi_date,
+             agg.city_code,
+             agg.vehicle_type,
+             agg.gross_revenue_amount,
+             0.25 * agg.gross_revenue_amount                          AS platform_commission_amount,
+             COALESCE(pg.driver_payout_amount, 0.0)                   AS driver_payout_amount,
+             COALESCE(rf.refund_amount, 0.0)                          AS refund_amount,
+             CAST(COALESCE(rf.refund_count, 0) AS int)                AS refund_count,
+             agg.gross_revenue_amount - COALESCE(rf.refund_amount,0.0) AS net_revenue_amount,
+             CAST(agg.trip_count AS int)                              AS trip_count,
+             'GBP'                                                    AS currency,
+             'stripe'                                                 AS system
+      FROM agg
+      LEFT JOIN rf ON rf.kpi_date=agg.kpi_date AND rf.city_code=agg.city_code AND rf.vehicle_type=agg.vehicle_type
+      LEFT JOIN pg ON pg.kpi_date=agg.kpi_date AND pg.city_code=agg.city_code AND pg.vehicle_type=agg.vehicle_type
+
+quality:
+  row_rules:
+    - name: net_revenue_non_negative
+      category: validity
+      sql: "net_revenue_amount IS NULL OR net_revenue_amount >= 0"
+    - name: refund_le_gross
+      category: consistency
+      sql: "refund_amount IS NULL OR gross_revenue_amount IS NULL OR refund_amount <= gross_revenue_amount"
+    - name: trip_count_positive
+      category: validity
+      sql: "trip_count IS NULL OR trip_count >= 0"
+  dataset_rules: []
+
+materialization:
+  strategy: overwrite
+  format: delta
+
+# Cross-domain link registrations — each join `reference` above resolves to
+# a registered UC table view. Cross-schema reads (no ADLS in this demo).
+links:
+  - name: pay_charges
+    type: table
+    path: "table:`{domain_catalog_prefix}_payments`.silver.silver_stripe_charges"
+  - name: silver_rideflow_trip_completed
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_trip_completed"
+  - name: mp_drivers
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_driver_profiles"
+  - name: silver_stripe_refunds
+    type: table
+    path: "table:`{domain_catalog_prefix}_payments`.silver.silver_stripe_refunds"
+  - name: silver_stripe_payouts
+    type: table
+    path: "table:`{domain_catalog_prefix}_payments`.silver.silver_stripe_payouts"
+
+downstream:
+  - type: semantic_model
+    name: "sm_rideflow_gold"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_executive"
+        platform: powerbi
+        managed: false
+  - type: semantic_model
+    name: "sm_rideflow_marketing"
+    platform: powerbi
+    managed: false
+    consumers:
+      - type: report
+        name: "rpt_rideflow_revenue_by_city"
+        platform: powerbi
+        managed: false

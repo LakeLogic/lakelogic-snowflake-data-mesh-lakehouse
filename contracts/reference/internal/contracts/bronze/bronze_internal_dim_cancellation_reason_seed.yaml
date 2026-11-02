@@ -1,0 +1,50 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Cancellation Reason Seed
+  target_layer: bronze
+  description: A reference list of cancellation reasons, each identified by a short
+    code and given a human-readable label shown to staff and in reports. Each entry
+    records who is responsible for the cancellation (such as the customer, driver
+    or platform), whether a cancellation fee applies, whether the cancellation counts
+    against the driver's rating, and how serious the reason is.
+  table_name: '{bronze_layer}_internal_dim_cancellation_reason_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: reason_code
+    type: string
+    description: The short code that uniquely identifies a cancellation reason, used
+      to link cancellations to their explanation across systems.
+  - name: reason_label
+    type: string
+    description: The human-readable name of the cancellation reason, shown to staff
+      and in reports.
+  - name: actor
+    type: string
+    description: The party responsible for the cancellation (for example the customer,
+      driver or platform), used to attribute and analyse cancellations.
+  - name: charge_cancellation_fee
+    type: boolean
+    description: Whether a cancellation fee applies for this reason, which drives
+      billing and customer communication.
+  - name: counts_against_driver_rating
+    type: boolean
+    description: Whether this cancellation counts against the driver's rating, so
+      it affects driver performance scoring.
+  - name: severity
+    type: string
+    description: How serious this cancellation reason is, used to prioritise follow-up
+      and reporting.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_cancellation_reason_seed'
+  format: csv
+
+primary_key:
+- reason_code
+
+dataset: bronze_internal_dim_cancellation_reason_seed

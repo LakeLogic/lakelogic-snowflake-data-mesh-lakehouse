@@ -1,0 +1,67 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Cases Status
+  target_layer: gold
+  description: 'grain: one row per Status'
+  table_name: '{gold_layer}_dim_cases_status'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: Status_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: Status
+    type: string
+    required: true
+    description: Status of the case or contract.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_cases_status
+
+primary_key:
+- Status
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - Status
+      name: Status_unique
+      category: uniqueness
+      description: No two rows share the same Status.
+
+materialization:
+  scd1:
+    surrogate_key: Status_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT Status
+    FROM source
+    WHERE Status IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_cases
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

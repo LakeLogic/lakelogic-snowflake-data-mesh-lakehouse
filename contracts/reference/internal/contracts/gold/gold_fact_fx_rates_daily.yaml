@@ -1,0 +1,137 @@
+version: 1.0.0
+
+info:
+  data_product: fx_rates
+  data_product_output: fact_fx_rate_daily
+  title: Gold — Fact Fx Rates Daily
+  target_layer: gold
+  description: Daily exchange rates for currency pairs, each tied to the calendar
+    date it applies to so rates can be lined up with the business events they affect.
+    Every rate records the currency being converted from and to, the rate value itself,
+    and which upstream feed supplied it, so the origin of each rate can be traced.
+    Internal references link each currency to its official currency record, with a
+    placeholder marking currencies not yet recognised.
+  table_name: '{gold_layer}_fact_fx_rates_daily'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: rate_date
+    type: date
+    required: true
+    description: The calendar date the exchange rate applies to, used to line up FX
+      rates with the business events they affect.
+  - name: base_currency
+    type: string
+    required: true
+    description: The currency being converted from in this exchange rate pair.
+  - name: quote_currency
+    type: string
+    required: true
+    description: The currency being converted to in this exchange rate pair.
+  - name: rate
+    type: decimal(18,8)
+    required: false
+    description: The exchange rate value used to convert one unit of the base currency
+      into the quote currency.
+  - name: source_feed
+    type: string
+    required: false
+    description: Identifies which upstream feed supplied this rate, so the origin
+      of each rate can be traced.
+  - name: base_currency_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_currency
+      column: currency_sk
+    description: Surrogate key of gold_dim_currency, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: quote_currency_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_currency
+      column: currency_sk
+    description: Surrogate key of gold_dim_currency, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_fx_rates_daily
+
+primary_key:
+- rate_date
+- base_currency
+- quote_currency
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - rate_date
+      - base_currency
+      - quote_currency
+      name: rate_date_base_currency_quote_currency_unique
+      category: uniqueness
+      description: No two rows share the same rate_date, base_currency, quote_currency.
+  - name: base_currency_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE base_currency_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose base_currency_sk fell back to the unknown member — the
+      dimension did not know them when this fact ran.
+  - name: quote_currency_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE quote_currency_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose quote_currency_sk fell back to the unknown member — the
+      dimension did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.rate_date,
+      r.base_currency,
+      r.quote_currency,
+      r.source_feed,
+      r.rate AS rate,
+      COALESCE(d1.currency_sk, '-1') AS base_currency_sk,
+      COALESCE(d2.currency_sk, '-1') AS quote_currency_sk
+    FROM source r
+    LEFT JOIN gold_dim_currency d1
+      ON  r.base_currency = d1.currency_code
+    LEFT JOIN gold_dim_currency d2
+      ON  r.quote_currency = d2.currency_code
+- phase: pre
+  derive:
+    field: system
+    sql: '''internal'''
+
+links:
+- name: gold_dim_currency
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_currency
+
+upstream:
+- gold_dim_currency
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_internal_fx_rates_daily
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

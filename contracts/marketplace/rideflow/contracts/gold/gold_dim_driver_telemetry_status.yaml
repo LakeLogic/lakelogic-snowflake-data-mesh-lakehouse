@@ -1,0 +1,75 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Driver Telemetry Status
+  target_layer: gold
+  description: Driver telemetry status records show, for each driver, whether their
+    telemetry feed is currently active, inactive or otherwise reporting, so teams
+    can see at a glance how each driver is reporting. Each record carries a surrogate
+    identifier used to link the status to related data elsewhere, with a placeholder
+    value marking records whose true identity is unknown. Records also note the source
+    system they originated from, supporting traceability back to where the status
+    came from.
+  table_name: '{gold_layer}_dim_driver_telemetry_status'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: status_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: status
+    type: string
+    required: true
+    description: The current status of the driver telemetry feed, showing whether
+      a driver's telemetry is active, inactive or otherwise, so teams can see at a
+      glance how each driver is reporting.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_driver_telemetry_status
+
+primary_key:
+- status
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - status
+      name: status_unique
+      category: uniqueness
+      description: No two rows share the same status.
+
+materialization:
+  scd1:
+    surrogate_key: status_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT status
+    FROM source
+    WHERE status IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_driver_telemetry
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

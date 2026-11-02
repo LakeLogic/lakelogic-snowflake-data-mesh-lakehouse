@@ -1,0 +1,174 @@
+version: 1.0.0
+
+info:
+  title: Silver — Rideflow Driver Telemetry
+  target_layer: silver
+  description: Individual location pings from drivers on the marketplace, each carrying
+    the driver's latitude and longitude, speed, heading and positional accuracy at
+    the moment it was recorded, along with the driver's working status and the trip
+    they were on. Readings are tied to a specific driver and city, and timestamped
+    so activity can be ordered and analysed over time. The coordinates are flagged
+    as personal data, so the location detail is sensitive.
+  table_name: '{silver_layer}_rideflow_driver_telemetry'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: telemetry_id
+    type: string
+    required: true
+    description: Unique identifier for each driver telemetry reading, used to trace
+      and de-duplicate individual location pings.
+  - name: driver_id
+    type: string
+    required: true
+    description: Identifies the driver the telemetry reading belongs to, linking activity
+      to a specific driver on the marketplace.
+  - name: gps_lat
+    type: float
+    required: true
+    pii: true
+    classification: gps_coordinate
+    description: Latitude of the driver's location at the time of the reading; sensitive
+      location data used for tracking and trip analysis.
+    min: -90.0
+    max: 90.0
+  - name: gps_lng
+    type: float
+    required: true
+    pii: true
+    classification: gps_coordinate
+    description: Longitude of the driver's location at the time of the reading; sensitive
+      location data used for tracking and trip analysis.
+    min: -180.0
+    max: 180.0
+  - name: speed_kmh
+    type: float
+    required: false
+    description: The driver's speed in kilometres per hour when the reading was taken,
+      useful for trip and safety analysis.
+  - name: heading
+    type: string
+    required: false
+    description: The direction the driver was travelling at the time of the reading,
+      typically expressed as a compass bearing.
+  - name: accuracy_meters
+    type: string
+    required: false
+    description: How precise the reported location is, in metres; a smaller value
+      means a more reliable position.
+  - name: trip_id
+    type: string
+    required: true
+    description: Identifies the trip the driver was on when the reading was taken,
+      connecting telemetry to a specific journey.
+  - name: status
+    type: string
+    required: true
+    description: The driver's current state at the time of the reading, such as available,
+      on-trip, or offline.
+  - name: city_code
+    type: string
+    required: false
+    description: Short code for the city the reading relates to, used for regional
+      reporting and filtering.
+  - name: timestamp
+    type: timestamp
+    required: false
+    description: The date and time the telemetry reading was recorded, used to order
+      and analyse driver activity over time.
+
+primary_key:
+- telemetry_id
+
+quality:
+  row_rules:
+  - name: telemetry_id_not_null
+    sql: telemetry_id IS NOT NULL
+    category: completeness
+    description: telemetry_id is always present (never null).
+  - name: gps_lat_range_min
+    sql: gps_lat IS NULL OR gps_lat >= -90.0
+    category: validity
+    description: gps_lat is at least -90.0 when present.
+  - name: gps_lat_range_max
+    sql: gps_lat IS NULL OR gps_lat <= 90.0
+    category: validity
+    description: gps_lat is at most 90.0 when present.
+  - name: gps_lng_range_min
+    sql: gps_lng IS NULL OR gps_lng >= -180.0
+    category: validity
+    description: gps_lng is at least -180.0 when present.
+  - name: gps_lng_range_max
+    sql: gps_lng IS NULL OR gps_lng <= 180.0
+    category: validity
+    description: gps_lng is at most 180.0 when present.
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: gps_lat_range_min
+    sql: gps_lat IS NULL OR gps_lat >= -90
+    category: validity
+    description: gps_lat is at least -90 when present.
+  - name: gps_lat_range_max
+    sql: gps_lat IS NULL OR gps_lat <= 90
+    category: validity
+    description: gps_lat is at most 90 when present.
+  - name: gps_lat_not_null
+    sql: gps_lat IS NOT NULL
+    category: completeness
+    description: gps_lat is always present (never null).
+  - name: gps_lng_range_min
+    sql: gps_lng IS NULL OR gps_lng >= -180
+    category: validity
+    description: gps_lng is at least -180 when present.
+  - name: gps_lng_range_max
+    sql: gps_lng IS NULL OR gps_lng <= 180
+    category: validity
+    description: gps_lng is at most 180 when present.
+  - name: gps_lng_not_null
+    sql: gps_lng IS NOT NULL
+    category: completeness
+    description: gps_lng is always present (never null).
+  - name: speed_kmh_range_min
+    sql: speed_kmh IS NULL OR speed_kmh >= 0
+    category: validity
+    description: speed_kmh is at least 0 when present.
+  - name: speed_kmh_range_max
+    sql: speed_kmh IS NULL OR speed_kmh <= 300
+    category: validity
+    description: speed_kmh is at most 300 when present.
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+  - name: trip_id_not_null
+    sql: trip_id IS NOT NULL
+    category: completeness
+    description: trip_id is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - telemetry_id
+    sort_by:
+    - timestamp
+    order: desc
+
+dataset: silver_rideflow_driver_telemetry
+
+source:
+  type: stream
+  path: table:{bronze_root}.{bronze_layer}_rideflow_driver_telemetry
+  options:
+    kind: delta
+    checkpoint: '{log_root}/_checkpoints/silver_rideflow_driver_telemetry'
+    trigger: available_now

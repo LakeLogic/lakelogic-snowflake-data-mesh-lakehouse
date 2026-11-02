@@ -1,0 +1,104 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Sessions Daily
+  target_layer: gold
+  description: Daily website session activity sourced from Google Analytics, with
+    one record per calendar day covering total time visitors spent in sessions and
+    total pages viewed. A numeric date label links each day to the shared reporting
+    calendar, and a source-system field distinguishes where the records originated.
+  table_name: '{gold_layer}_fact_sessions_daily'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: activity_date
+    type: date
+    required: true
+    description: The calendar day this session activity occurred on; one row in this
+      table represents one day of sessions.
+  - name: session_duration_seconds
+    type: integer
+    required: false
+    description: Total time visitors spent in sessions on this day, used to gauge
+      engagement depth.
+  - name: page_views
+    type: integer
+    required: false
+    description: Total number of pages viewed across all sessions on this day, a core
+      indicator of site traffic and interest.
+  - name: date_key
+    type: integer
+    required: false
+    foreign_key:
+      contract: gold_dim_date
+      column: date_key
+    description: The day of activity_date as YYYYMMDD — the key of the date dimension.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_sessions_daily
+
+primary_key:
+- activity_date
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - activity_date
+      name: activity_date_unique
+      category: uniqueness
+      description: No two rows share the same activity_date.
+
+transformations:
+- phase: pre
+  sql: |-
+    WITH touched AS (
+      SELECT DISTINCT
+        CAST(session_start AS DATE) AS _touched_0
+      FROM source
+    ),
+    r AS (
+      SELECT
+        CAST(session_start AS DATE) AS activity_date,
+        SUM(session_duration_seconds) AS session_duration_seconds,
+        SUM(page_views) AS page_views
+      FROM silver_google_analytics_sessions_full
+      JOIN touched
+        ON CAST(session_start AS DATE) = touched._touched_0
+      GROUP BY CAST(session_start AS DATE)
+    )
+    SELECT
+      r.activity_date,
+      r.session_duration_seconds,
+      r.page_views,
+      CAST(EXTRACT(YEAR FROM r.activity_date) AS BIGINT) * 10000 + CAST(EXTRACT(MONTH FROM r.activity_date) AS BIGINT) * 100 + CAST(EXTRACT(DAY FROM r.activity_date) AS BIGINT) AS date_key
+    FROM r
+- phase: pre
+  derive:
+    field: system
+    sql: '''google_analytics'''
+
+links:
+- name: silver_google_analytics_sessions_full
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_sessions
+
+upstream: []
+
+materialization:
+  fact:
+    type: aggregate
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_sessions
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

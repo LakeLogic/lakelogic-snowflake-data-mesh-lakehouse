@@ -1,0 +1,100 @@
+version: 1.0.0
+
+info:
+  title: Silver — Salesforce Cases
+  target_layer: silver
+  table_name: '{silver_layer}_salesforce_cases'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: attributes
+    type: json
+    required: false
+    description: Salesforce API metadata for the record (object type and URL).
+  - name: Id
+    type: string
+    required: true
+    description: Salesforce record ID; unique per record.
+  - name: AccountId
+    type: string
+    required: false
+    description: Salesforce account the record belongs to.
+  - name: ContactId
+    type: string
+    required: false
+    description: Salesforce contact the case is about.
+  - name: CaseNumber
+    type: string
+    required: false
+    description: Case number shown to users in Salesforce.
+  - name: Subject
+    type: string
+    required: false
+    description: Short summary of the case.
+  - name: Status
+    type: string
+    required: true
+    description: Status of the case or contract.
+  - name: Priority
+    type: string
+    required: false
+    description: Case priority.
+  - name: Origin
+    type: string
+    required: false
+    description: Channel the case came in through, such as email or phone.
+  - name: CreatedDate
+    type: timestamp
+    required: false
+    description: When the record was created in Salesforce.
+  - name: LastModifiedDate
+    type: timestamp
+    required: false
+    description: When a user last changed the record in Salesforce.
+  - name: SystemModstamp
+    type: timestamp
+    required: false
+    description: When the record was last changed by a user or by Salesforce itself.
+  - name: ClosedDate
+    type: date
+    required: false
+    description: When the case was closed.
+  - name: IsDeleted
+    type: boolean
+    required: false
+    description: Whether the record is in the Salesforce recycle bin.
+
+primary_key:
+- Id
+
+quality:
+  row_rules:
+  - name: Id_not_null
+    sql: Id IS NOT NULL
+    category: completeness
+    description: id is always present (never null).
+  - name: Status_not_null
+    sql: Status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+
+transformations:
+- deduplicate:
+    by:
+    - Id
+    sort_by:
+    - LastModifiedDate
+    order: desc
+
+dataset: silver_salesforce_cases
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_salesforce_cases
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

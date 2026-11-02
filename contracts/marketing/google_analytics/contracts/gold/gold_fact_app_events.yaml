@@ -1,0 +1,225 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact App Events
+  target_layer: gold
+  description: Anonymous app activity from Google Analytics, one record per action
+    a user takes, timed to the moment it happened on their device and dated for daily
+    trend reporting. Each record carries the device type and operating system, the
+    country and city the user was in, the app version they were running, and whether
+    they were signed in or anonymous, along with any extra event-specific detail held
+    in a single field. Internal references tie each event, device category and operating
+    system back to approved reference lists, with a placeholder where a value is unrecognised.
+  table_name: '{gold_layer}_fact_app_events'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: event_timestamp
+    type: timestamp
+    required: true
+    description: The exact moment the event took place, recorded from the user's device.
+      Used to order activity and measure timing.
+  - name: user_pseudo_id
+    type: string
+    required: true
+    description: An anonymous identifier assigned to a user's device or app install.
+      Lets us follow a user's journey without knowing who they are.
+  - name: event_name
+    type: string
+    required: true
+    description: The name of the app action a user performed, such as opening the
+      app or making a purchase. Used to understand which activities users engage in.
+  - name: event_date
+    type: date
+    required: false
+    description: The calendar date the event occurred, used for daily reporting and
+      trend comparisons.
+  - name: user_id
+    type: string
+    required: false
+    description: The identifier for a signed-in user, when available. Links activity
+      across devices for known customers.
+  - name: device_category
+    type: string
+    required: false
+    description: The type of device used, such as mobile, tablet or desktop. Helps
+      compare behaviour across device types.
+  - name: device_os
+    type: string
+    required: false
+    description: The operating system of the user's device, such as iOS or Android.
+      Useful for spotting platform-specific issues.
+  - name: geo_country
+    type: string
+    required: false
+    description: The country the user was in when the event happened. Supports regional
+      reporting and market analysis.
+  - name: geo_city
+    type: string
+    required: false
+    description: The city the user was in when the event happened. Gives a more local
+      view of where activity comes from.
+  - name: app_version
+    type: string
+    required: false
+    description: The version of the app the user was running. Helps assess how releases
+      affect user behaviour.
+  - name: event_params_json
+    type: string
+    required: false
+    description: Additional details attached to the event, stored together as a single
+      record. Holds extra context that varies by event type.
+  - name: event_name_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_google_analytics_dim_event_name
+      column: event_name_sk
+    description: Surrogate key of gold_google_analytics_dim_event_name, looked up
+      on its business key; '-1' when the dimension does not know the row.
+  - name: device_category_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_device_category
+      column: device_category_sk
+    description: Surrogate key of gold_dim_device_category, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: device_os_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_device_os
+      column: device_os_sk
+    description: Surrogate key of gold_dim_device_os, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: geo_country_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_geo_country
+      column: geo_country_sk
+    description: Surrogate key of gold_dim_geo_country, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_app_events
+
+primary_key:
+- event_timestamp
+- user_pseudo_id
+- event_name
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - event_timestamp
+      - user_pseudo_id
+      - event_name
+      name: event_timestamp_user_pseudo_id_event_name_unique
+      category: uniqueness
+      description: No two rows share the same event_timestamp, user_pseudo_id, event_name.
+  - name: event_name_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE event_name_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose event_name_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: device_category_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE device_category_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose device_category_sk fell back to the unknown member — the
+      dimension did not know them when this fact ran.
+  - name: device_os_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE device_os_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose device_os_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: geo_country_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE geo_country_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose geo_country_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.event_timestamp,
+      r.user_pseudo_id,
+      r.event_name,
+      r.event_date,
+      r.user_id,
+      r.device_category,
+      r.device_os,
+      r.geo_country,
+      r.geo_city,
+      r.app_version,
+      r.event_params_json,
+      COALESCE(d1.event_name_sk, '-1') AS event_name_sk,
+      COALESCE(d2.device_category_sk, '-1') AS device_category_sk,
+      COALESCE(d3.device_os_sk, '-1') AS device_os_sk,
+      COALESCE(d4.geo_country_sk, '-1') AS geo_country_sk
+    FROM source r
+    LEFT JOIN gold_google_analytics_dim_event_name d1
+      ON  r.event_name = d1.event_name
+    LEFT JOIN gold_dim_device_category d2
+      ON  r.device_category = d2.device_category
+    LEFT JOIN gold_dim_device_os d3
+      ON  r.device_os = d3.device_os
+    LEFT JOIN gold_dim_geo_country d4
+      ON  r.geo_country = d4.geo_country
+- phase: pre
+  derive:
+    field: system
+    sql: '''google_analytics'''
+
+links:
+- name: gold_google_analytics_dim_event_name
+  type: table
+  path: table:{gold_root}.{gold_layer}_google_analytics_dim_event_name
+- name: gold_dim_device_category
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_device_category
+- name: gold_dim_device_os
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_device_os
+- name: gold_dim_geo_country
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_geo_country
+
+upstream:
+- gold_dim_device_category
+- gold_dim_device_os
+- gold_dim_geo_country
+- gold_google_analytics_dim_event_name
+
+materialization:
+  strategy: append
+  fact:
+    type: factless
+  partition_by:
+  - geo_country
+  - event_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_google_analytics_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

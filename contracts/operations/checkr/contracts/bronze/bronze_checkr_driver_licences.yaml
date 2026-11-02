@@ -1,0 +1,72 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Checkr Driver Licences
+  target_layer: bronze
+  description: Driver licence records extracted from source documents held by Checkr,
+    capturing the issuing authority and jurisdiction, the holder's name, licence number
+    and date of birth, the licence expiry date, and the vehicle classes the holder
+    is permitted to drive. Each row is traceable back to the original file it was
+    extracted from. The licence number and date of birth are personal data used to
+    match and confirm a driver's identity.
+  table_name: '{bronze_layer}_checkr_driver_licences'
+  domain: operations
+  system: checkr
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    description: The document this row was extracted from.
+  - name: holder_name
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Name:\s*([A-Z][a-z]+\s+[A-Z][a-z]+)
+    description: Full name of the licence holder.
+  - name: licence_number
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Licence\s*No:\s*([A-Z]{2}-\d{8})
+    description: Driver licence number in the form two uppercase letters, hyphen,
+      eight digits.
+    pii: true
+    classification: licence_id
+  - name: date_of_birth
+    type: date
+    extraction_task: metadata
+    extraction_examples:
+    - DOB:\s*(\d{4}-\d{2}-\d{2})
+    description: Holder's date of birth in ISO format.
+    pii: true
+    classification: date_of_birth
+  - name: expiry_date
+    type: date
+    extraction_task: metadata
+    extraction_examples:
+    - EXP:\s*(\d{4}-\d{2}-\d{2})
+    description: Licence expiry date in ISO format.
+  - name: vehicle_classes
+    type: string
+    extraction_task: metadata
+    extraction_examples:
+    - Classes:\s*([^\n]+)
+    description: Comma-separated list of vehicle classes the holder is licensed for.
+
+source:
+  type: landing
+  path: '{landing_root}/driver_licences/**/*.pdf'
+  format: pdf
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_checkr_driver_licences
+
+extraction:
+  provider: document

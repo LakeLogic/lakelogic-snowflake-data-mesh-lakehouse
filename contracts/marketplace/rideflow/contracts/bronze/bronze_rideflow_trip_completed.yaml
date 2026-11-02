@@ -1,0 +1,128 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Rideflow Trip Completed
+  target_layer: bronze
+  description: Completed rides from the Rideflow marketplace are recorded here, each
+    one traceable by a unique trip identifier and linked to the rider who booked it
+    and the driver who drove it. Alongside the ride category, city, timings and distance
+    travelled, the record carries the money side of the journey — fare, any surge
+    uplift, tip and how the rider paid — plus the pickup and drop-off coordinates,
+    which are flagged as sensitive location data. Both parties' ratings and free-text
+    notes are also captured, giving a view of satisfaction and any support context
+    around the trip.
+  table_name: '{bronze_layer}_rideflow_trip_completed'
+  domain: marketplace
+  system: rideflow
+
+model:
+  fields:
+  - name: trip_id
+    type: string
+    description: Unique identifier for a single completed ride, used to trace each
+      trip across bookings, billing and support.
+  - name: rider_id
+    type: string
+    description: Identifies the customer who took the ride, allowing trip history
+      and rider-level analysis.
+  - name: driver_id
+    type: string
+    description: Identifies the driver who completed the ride, supporting driver performance
+      and earnings tracking.
+  - name: trip_type
+    type: string
+    description: Category of the ride (for example standard or premium), used to compare
+      service levels and pricing.
+  - name: pickup_lat
+    type: Float64
+    pii: true
+    classification: gps_coordinate
+    description: Latitude of where the rider was picked up; sensitive location data
+      used for mapping and demand analysis.
+  - name: pickup_lng
+    type: Float64
+    pii: true
+    classification: gps_coordinate
+    description: Longitude of where the rider was picked up; sensitive location data
+      used for mapping and demand analysis.
+  - name: dropoff_lat
+    type: Float64
+    pii: true
+    classification: gps_coordinate
+    description: Latitude of where the rider was dropped off; sensitive location data
+      used for route and coverage analysis.
+  - name: dropoff_lng
+    type: Float64
+    pii: true
+    classification: gps_coordinate
+    description: Longitude of where the rider was dropped off; sensitive location
+      data used for route and coverage analysis.
+  - name: city_code
+    type: string
+    description: Short code for the city where the trip took place, enabling regional
+      reporting and comparisons.
+  - name: requested_at
+    type: string
+    description: When the rider requested the trip, useful for measuring wait times
+      and demand patterns.
+  - name: pickup_at
+    type: string
+    description: When the rider was actually picked up, marking the start of the paid
+      journey.
+  - name: dropoff_at
+    type: string
+    description: When the rider was dropped off, marking the end of the journey and
+      used to calculate trip duration.
+  - name: distance_km
+    type: Float64
+    description: Distance travelled on the trip in kilometres, a key driver of fare
+      and efficiency analysis.
+  - name: duration_minutes
+    type: Int64
+    description: How long the trip took in minutes, used to assess service speed and
+      pricing fairness.
+  - name: fare_amount
+    type: Float64
+    description: The amount charged for the trip before any tip, central to revenue
+      reporting.
+  - name: surge_multiplier
+    type: Float64
+    description: How much the fare was scaled up during high-demand periods, helping
+      explain price variation.
+  - name: tip_amount
+    type: Float64
+    description: Extra amount the rider chose to give the driver, reflecting satisfaction
+      and affecting driver earnings.
+  - name: payment_method
+    type: string
+    description: How the rider paid (for example card or cash), used to analyse payment
+      mix and reconciliation.
+  - name: rider_rating
+    type: Float64
+    description: The score the rider gave the driver for this trip, a signal of customer
+      satisfaction.
+  - name: driver_rating
+    type: Float64
+    description: The score the driver gave the rider for this trip, used to monitor
+      rider behaviour.
+  - name: notes
+    type: string
+    description: Free-text comments recorded about the trip, which may contain context
+      for support or disputes.
+
+source:
+  type: landing
+  path: '{landing_root}/trip_completed'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d/h_%H
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- trip_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_rideflow_trip_completed

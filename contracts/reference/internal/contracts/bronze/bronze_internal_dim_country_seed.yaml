@@ -1,0 +1,61 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Country Seed
+  target_layer: bronze
+  description: A reference list of countries, each identified by its three-letter
+    code and paired with the two-letter code, standard numeric identifier and human-readable
+    name used for cross-system matching. Countries are grouped by broad geographic
+    region and a finer sub-region for regional reporting. The source is an internal
+    seed list, and every row is expected to carry a three-letter code.
+  table_name: '{bronze_layer}_internal_dim_country_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: country_alpha3
+    type: string
+    description: Three-letter country code used to identify a country in international
+      standards and cross-system matching.
+  - name: country_alpha2
+    type: string
+    description: Two-letter country code commonly used for compact country references
+      and reporting.
+  - name: country_name
+    type: string
+    description: The human-readable name of the country as recorded in the reference
+      list.
+  - name: country_numeric
+    type: Int64
+    description: Standard numeric country identifier used for consistent country matching
+      across systems.
+  - name: region
+    type: string
+    description: The broad geographic region the country belongs to, useful for regional
+      reporting and grouping.
+  - name: sub_region
+    type: string
+    description: A finer geographic grouping within the region, useful for more detailed
+      geographic analysis.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_country_seed'
+  format: csv
+
+primary_key:
+- country_alpha3
+
+quality:
+  row_rules:
+  - name: country_alpha3_partition_not_null
+    sql: country_alpha3 IS NOT NULL
+    category: completeness
+    description: country_alpha3 is always present (never null).
+
+materialization:
+  partition_by:
+  - country_alpha3
+
+dataset: bronze_internal_dim_country_seed

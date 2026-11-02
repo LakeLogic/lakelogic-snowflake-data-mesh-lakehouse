@@ -1,0 +1,91 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Checkr Background Checks
+  target_layer: bronze
+  description: Background screening reports for drivers and workers, sourced from
+    Checkr, recording each person's full name, date of birth, last four Social Security
+    digits, licence number and residential address alongside the check's status, outcome
+    and adjudication decision. Each report is tied to a driver identifier and carries
+    the timestamps of when the screening was requested and completed.
+  table_name: '{bronze_layer}_checkr_background_checks'
+  domain: operations
+  system: checkr
+
+model:
+  fields:
+  - name: report_id
+    type: string
+    description: Unique identifier for a background check report, used to track and
+      reference the screening throughout its lifecycle.
+  - name: driver_id
+    type: string
+    description: Identifier for the driver or worker who is the subject of the background
+      check, linking the report to the person's operational record.
+  - name: full_name
+    type: string
+    pii: true
+    classification: person_name
+    description: The full legal name of the person being screened, used to match the
+      report to the correct individual.
+  - name: date_of_birth
+    type: string
+    pii: true
+    classification: date_of_birth
+    description: The person's date of birth, used to verify identity and ensure the
+      background check is matched to the right individual.
+  - name: ssn_last_four
+    type: string
+    pii: true
+    classification: national_id
+    description: The last four digits of the person's Social Security number, used
+      as a partial identity check without storing the full number.
+  - name: licence_number
+    type: string
+    pii: true
+    classification: licence_id
+    description: The person's driver's licence number, used to verify identity and
+      confirm eligibility for driving-related roles.
+  - name: address
+    type: string
+    pii: true
+    classification: postal_address
+    description: The person's residential address, used for identity verification
+      and to determine which jurisdictions to search during screening.
+  - name: status
+    type: string
+    description: The current stage of the background check process, indicating whether
+      the report is pending, in progress, or complete.
+  - name: result
+    type: string
+    description: The overall outcome of the background check, showing whether the
+      screening found any records of concern.
+  - name: completed_at
+    type: string
+    description: The date and time the background check finished, useful for tracking
+      turnaround times and compliance deadlines.
+  - name: created_at
+    type: string
+    description: The date and time the background check was requested, marking when
+      the screening process began.
+  - name: adjudication
+    type: string
+    description: The final hiring decision based on the background check results,
+      showing whether the person was cleared, flagged, or requires review.
+
+source:
+  type: landing
+  path: '{landing_root}/background_checks'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- report_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_checkr_background_checks

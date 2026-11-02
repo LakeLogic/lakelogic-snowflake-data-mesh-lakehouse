@@ -1,0 +1,73 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Stripe Payouts
+  target_layer: bronze
+  description: Payouts sent from Stripe to bank accounts, each traced by a unique
+    reference and linked to the driver or payee receiving the funds, with the amount
+    and currency of the transfer. Records carry the payout's status, the expected
+    or actual arrival date, and when it was initiated, alongside the recipient's email
+    address and the last four digits of the destination bank account.
+  table_name: '{bronze_layer}_stripe_payouts'
+  domain: payments
+  system: stripe
+
+model:
+  fields:
+  - name: payout_id
+    type: string
+    description: Unique reference for a single payout sent from Stripe to a bank account.
+      Used to trace and reconcile each payout end to end.
+  - name: driver_id
+    type: string
+    description: Identifier of the driver or payee this payout relates to. Links the
+      payout to the person or account receiving the funds.
+  - name: amount
+    type: Float64
+    description: The payout amount in the smallest currency unit. Shows how much money
+      was transferred in this payout.
+  - name: currency
+    type: string
+    description: The currency in which the payout was made. Needed to interpret the
+      amount and for financial reporting.
+  - name: status
+    type: string
+    description: Current state of the payout, such as pending, paid, or failed. Indicates
+      whether the money has reached the bank account.
+  - name: payout_email
+    type: string
+    pii: true
+    classification: email
+    description: Email address associated with the payout recipient. Personal contact
+      information used for payout notifications.
+  - name: bank_account_last_four
+    type: string
+    sensitive: true
+    classification: financial_account
+    description: The last four digits of the bank account that received the payout.
+      Helps identify the destination account without exposing full details.
+  - name: arrival_date
+    type: string
+    description: The date the payout is expected to or did arrive in the bank account.
+      Used for cash-flow and reconciliation tracking.
+  - name: created_at
+    type: string
+    description: The date and time the payout record was created. Marks when the payout
+      was initiated.
+
+source:
+  type: landing
+  path: '{landing_root}/payouts'
+  format: csv
+  partition:
+    format: y_%Y/m_%m/d_%d
+  load_mode: incremental
+  watermark_strategy: pipeline_log
+
+primary_key:
+- payout_id
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+dataset: bronze_stripe_payouts

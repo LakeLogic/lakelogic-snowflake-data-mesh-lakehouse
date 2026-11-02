@@ -1,0 +1,122 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Contracts
+  target_layer: gold
+  description: 'grain: One row per Salesforce contract record.'
+  table_name: '{gold_layer}_fact_contracts'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: Id
+    type: string
+    required: true
+    description: Salesforce record ID; unique per record.
+  - name: monthly_commit_amount
+    type: Float64
+    required: false
+    description: Monthly spend the business account has committed to.
+  - name: ContractNumber
+    type: string
+    required: false
+    description: Contract number shown to users in Salesforce.
+  - name: Status
+    type: string
+    required: false
+    description: Status of the case or contract.
+  - name: StartDate
+    type: date
+    required: false
+    description: Date the contract starts.
+  - name: EndDate
+    type: date
+    required: false
+    description: Date the contract ends.
+  - name: ContractTerm
+    type: Int64
+    required: false
+    description: Contract length in months.
+  - name: CreatedDate
+    type: timestamp
+    required: false
+    description: When the record was created in Salesforce.
+  - name: account_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_accounts
+      column: accounts_sk
+    description: Surrogate key of gold_dim_accounts, looked up as of StartDate; '-1'
+      when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_contracts
+
+primary_key:
+- Id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - Id
+      name: Id_unique
+      category: uniqueness
+      description: No two rows share the same Id.
+  - name: account_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE account_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose account_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.Id,
+      r.ContractNumber,
+      r.Status,
+      r.StartDate,
+      r.EndDate,
+      r.ContractTerm,
+      r.CreatedDate,
+      r.RideFlow_Monthly_Commit__c AS monthly_commit_amount,
+      COALESCE(d1.accounts_sk, '-1') AS account_sk
+    FROM source r
+    LEFT JOIN gold_dim_accounts d1
+      ON  r.AccountId = d1.Id
+      AND r.StartDate >= d1.effective_from
+      AND r.StartDate < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+links:
+- name: gold_dim_accounts
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_accounts
+
+upstream:
+- gold_dim_accounts
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_contracts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

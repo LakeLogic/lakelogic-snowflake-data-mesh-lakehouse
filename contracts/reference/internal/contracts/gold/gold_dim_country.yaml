@@ -1,0 +1,86 @@
+version: 1.0.0
+
+info:
+  data_product: reference_data
+  data_product_output: dim_country
+  title: Gold — Dim Country
+  target_layer: gold
+  description: A reference list of countries, each identified by its three-letter
+    code alongside the two-letter and numeric codes used for matching across systems,
+    plus the country's name and its broad and finer geographic groupings for regional
+    reporting. A placeholder code of '-1' marks records that could not be matched
+    to a known country. Each record also carries the source system it came from, so
+    its lineage can be traced.
+  table_name: '{gold_layer}_dim_country'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: country_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: country_alpha3
+    type: string
+    required: true
+    description: Three-letter country code used to identify a country in international
+      standards and cross-system matching.
+  - name: country_alpha2
+    type: string
+    required: false
+    description: Two-letter country code commonly used for compact country references
+      and reporting.
+  - name: country_name
+    type: string
+    required: false
+    description: The human-readable name of the country as recorded in the reference
+      list.
+  - name: country_numeric
+    type: Int64
+    required: false
+    description: Standard numeric country identifier used for consistent country matching
+      across systems.
+  - name: region
+    type: string
+    required: false
+    description: The broad geographic region the country belongs to, useful for regional
+      reporting and grouping.
+  - name: sub_region
+    type: string
+    required: false
+    description: A finer geographic grouping within the region, useful for more detailed
+      geographic analysis.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_country
+
+primary_key:
+- country_alpha3
+
+materialization:
+  scd1:
+    surrogate_key: country_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_internal_dim_country_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''internal'''

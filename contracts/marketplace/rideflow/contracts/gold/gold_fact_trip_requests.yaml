@@ -1,0 +1,187 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Trip Requests
+  target_layer: gold
+  description: Ride requests placed through the rideflow marketplace, each carrying
+    its quoted fare, the estimated wait before pickup, and any surge multiplier applied
+    when demand was high, alongside the moment the request was made. Requests link
+    to rider profiles and trip types, with unmatched riders or trip types flagged
+    rather than dropped, and each record is traceable to the source system it came
+    from.
+  table_name: '{gold_layer}_fact_trip_requests'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: request_id
+    type: string
+    required: true
+    description: Unique identifier for each ride request made by a rider. Used to
+      track and reference individual trips.
+  - name: estimated_fare_total
+    type: decimal(10,2)
+    required: false
+    description: Sum of the estimated fares quoted for the requests.
+  - name: avg_estimated_eta_minutes
+    type: float
+    required: false
+    description: Average estimated time to pickup, in minutes.
+  - name: avg_surge_multiplier
+    type: float
+    required: false
+    description: Average surge multiplier applied to the requests.
+  - name: requested_at
+    type: timestamp
+    required: false
+    description: Date and time when the rider requested the trip. Important for demand
+      analysis and time-based reporting.
+  - name: trip_type
+    type: string
+    required: false
+    description: Category of the ride requested, such as standard, premium, or shared.
+      Helps understand demand patterns and service mix.
+  - name: city_code
+    type: string
+    required: false
+    description: Short code representing the city where the trip took place. Used
+      for regional reporting and market analysis.
+  - name: date_key
+    type: integer
+    required: false
+    description: The day of request_date as YYYYMMDD — the key of the date dimension.
+    foreign_key:
+      contract: gold_dim_date
+      column: date_key
+  - name: rider_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_rider_profiles
+      column: rider_profiles_sk
+    description: Surrogate key of gold_dim_rider_profiles, looked up as of requested_at;
+      '-1' when the dimension does not know the row.
+  - name: city_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_city_master
+      column: city_master_sk
+    description: Surrogate key of gold_dim_city_master, looked up as of requested_at;
+      '-1' when the dimension does not know the row.
+  - name: trip_type_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_trip_type
+      column: trip_type_sk
+    description: Surrogate key of gold_dim_trip_type, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: requested_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `requested_at`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_trip_requests
+
+primary_key:
+- request_id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - request_id
+      name: request_id_unique
+      category: uniqueness
+      description: No two rows share the same request_id.
+  - name: rider_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE rider_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose rider_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: city_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE city_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose city_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: trip_type_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE trip_type_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose trip_type_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.request_id,
+      r.requested_at,
+      r.trip_type,
+      r.city_code,
+      CAST(EXTRACT(YEAR FROM CAST(r.requested_at AS DATE)) AS BIGINT) * 10000 + CAST(EXTRACT(MONTH FROM CAST(r.requested_at AS DATE)) AS BIGINT) * 100 + CAST(EXTRACT(DAY FROM CAST(r.requested_at AS DATE)) AS BIGINT) AS date_key,
+      r.estimated_fare AS estimated_fare_total,
+      r.estimated_eta_minutes AS avg_estimated_eta_minutes,
+      r.surge_multiplier AS avg_surge_multiplier,
+      COALESCE(d1.rider_profiles_sk, '-1') AS rider_sk,
+      COALESCE(d2.city_master_sk, '-1') AS city_sk,
+      COALESCE(d3.trip_type_sk, '-1') AS trip_type_sk,
+      CAST(r.requested_at AS DATE) AS requested_date
+    FROM source r
+    LEFT JOIN gold_dim_rider_profiles d1
+      ON  r.rider_id = d1.rider_id
+      AND r.requested_at >= d1.effective_from
+      AND r.requested_at < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_city_master d2
+      ON  r.city_code = d2.city_code
+      AND r.requested_at >= d2.effective_from
+      AND r.requested_at < COALESCE(d2.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_trip_type d3
+      ON  r.trip_type = d3.trip_type
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+links:
+- name: gold_dim_rider_profiles
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_rider_profiles
+- name: gold_dim_city_master
+  type: table
+  path: table:`{domain_catalog_prefix}_reference`.{gold_layer}.{gold_layer}_dim_city_master
+- name: gold_dim_trip_type
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_trip_type
+
+upstream:
+- gold_dim_city_master
+- gold_dim_rider_profiles
+- gold_dim_trip_type
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+  partition_by:
+  - requested_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_trip_requests
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,99 @@
+version: 1.0.0
+
+info:
+  title: Silver — Internal Fx Rates Daily
+  target_layer: silver
+  description: Daily internal foreign exchange rates, pairing a base currency with
+    the currency it is quoted against for a given calendar date, with the conversion
+    rate itself allowed to be missing. Each rate is traceable to the upstream feed
+    that supplied it, and the date, base and quote currencies are always present.
+  table_name: '{silver_layer}_internal_fx_rates_daily'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: rate_date
+    type: date
+    required: true
+    description: The calendar date the exchange rate applies to, used to line up FX
+      rates with the business events they affect.
+  - name: base_currency
+    type: string
+    required: true
+    description: The currency being converted from in this exchange rate pair.
+  - name: quote_currency
+    type: string
+    required: true
+    description: The currency being converted to in this exchange rate pair.
+  - name: rate
+    type: decimal(18,8)
+    required: false
+    description: The exchange rate value used to convert one unit of the base currency
+      into the quote currency.
+  - name: source_feed
+    type: string
+    required: false
+    description: Identifies which upstream feed supplied this rate, so the origin
+      of each rate can be traced.
+
+primary_key:
+- rate_date
+- base_currency
+- quote_currency
+
+quality:
+  row_rules:
+  - name: rate_date_not_null
+    sql: rate_date IS NOT NULL
+    category: completeness
+    description: rate_date is always present (never null).
+  - name: base_currency_not_null
+    sql: base_currency IS NOT NULL
+    category: completeness
+    description: base_currency is always present (never null).
+  - name: quote_currency_not_null
+    sql: quote_currency IS NOT NULL
+    category: completeness
+    description: quote_currency is always present (never null).
+  - name: base_currency_accepted_values
+    sql: base_currency IS NULL OR base_currency IN ('AUD', 'CAD', 'CHF', 'CNY', 'EUR',
+      'GBP', 'JPY', 'USD')
+    category: validity
+    description: 'base_currency is one of: AUD, CAD, CHF, CNY, EUR, GBP, JPY, USD
+      when present.'
+  - name: quote_currency_accepted_values
+    sql: quote_currency IS NULL OR quote_currency IN ('AUD', 'CAD', 'CHF', 'CNY',
+      'EUR', 'GBP', 'JPY', 'USD')
+    category: validity
+    description: 'quote_currency is one of: AUD, CAD, CHF, CNY, EUR, GBP, JPY, USD
+      when present.'
+  - name: rate_range_min
+    sql: rate IS NULL OR rate >= 0
+    category: validity
+    description: rate is at least 0 when present.
+  - name: rate_range_max
+    sql: rate IS NULL OR rate <= 1000000
+    category: validity
+    description: rate is at most 1000000 when present.
+
+transformations:
+- deduplicate:
+    by:
+    - rate_date
+    - base_currency
+    - quote_currency
+    sort_by:
+    - _lakelogic_processed_at
+    order: desc
+
+dataset: silver_internal_fx_rates_daily
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_internal_fx_rates_daily
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

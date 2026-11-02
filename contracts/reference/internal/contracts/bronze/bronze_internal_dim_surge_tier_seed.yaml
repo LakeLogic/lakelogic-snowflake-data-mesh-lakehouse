@@ -1,0 +1,47 @@
+version: 1.0.0
+
+info:
+  title: Bronze — Internal Dim Surge Tier Seed
+  target_layer: bronze
+  description: Reference data defining pricing surge tiers, each identified by a short
+    code and bounded by a lowest and highest price multiplier that set the tier's
+    pricing range. Each tier also carries a human-readable label for display and a
+    flag indicating whether riders should be notified when that tier applies. The
+    source system is recorded only as internal, with no further provenance given in
+    the contract.
+  table_name: '{bronze_layer}_internal_dim_surge_tier_seed'
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: surge_tier_code
+    type: string
+    description: Short code identifying a pricing surge tier used in the reference
+      list. Used to link surge pricing rules to the correct tier.
+  - name: multiplier_min
+    type: Float64
+    description: Lowest price multiplier applied when this surge tier is in effect.
+      Defines the starting point of the tier's pricing range.
+  - name: multiplier_max
+    type: Float64
+    description: Highest price multiplier applied when this surge tier is in effect.
+      Defines the upper bound of the tier's pricing range.
+  - name: display_label
+    type: string
+    description: Human-readable name shown for this surge tier in customer-facing
+      or internal displays. Helps staff and customers recognise the tier.
+  - name: notify_rider
+    type: boolean
+    description: Indicates whether riders should be notified when this surge tier
+      applies. Supports customer communication decisions.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_surge_tier_seed'
+  format: csv
+
+primary_key:
+- surge_tier_code
+
+dataset: bronze_internal_dim_surge_tier_seed

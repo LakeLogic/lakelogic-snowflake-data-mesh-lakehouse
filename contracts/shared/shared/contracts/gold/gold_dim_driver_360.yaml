@@ -1,0 +1,134 @@
+version: 1.0.0
+
+info:
+  data_product: driver_360
+  data_product_output: dim_driver_360
+  title: "Gold — Dim Driver 360 (cross-domain)"
+  table_name: '{gold_layer}_dim_driver_360'
+  description: >
+    Per-driver 360 view assembled from THREE source domains:
+      * marketplace (silver_rideflow_driver_profiles) — identity, status, rating
+      * operations  (silver_checkr_background_checks) — background check status
+      * payments    (silver_stripe_payouts) — lifetime payout total
+    Demonstrates the true cross-domain mart pattern via TransformationJoin.
+  target_layer: gold
+  domain: shared
+  system: shared
+
+model:
+  fields:
+    # ── From marketplace driver_profiles (primary source) ────────────────
+    - name: driver_id
+      type: string
+      description: RideFlow driver the record belongs to.
+      required: true
+    - name: full_name
+      type: string
+      description: Driver's full name.
+      pii: true
+    - name: email
+      type: string
+      description: Driver's email address.
+      pii: true
+    - name: city_code
+      type: string
+      description: RideFlow city code.
+    - name: status
+      type: string
+      description: Driver's account status.
+    - name: rating
+      type: float
+      description: Driver's average rating.
+    # ── Joined from operations.checkr ────────────────────────────────────
+    - name: verification_status
+      type: string
+      description: "checkr report status (clear / consider / suspended)"
+    - name: verification_completed_at
+      type: timestamp
+      description: When the driver's latest background check completed.
+    # ── Joined from payments.stripe ──────────────────────────────────────
+    - name: lifetime_payout_amount
+      type: float
+      description: "Sum of stripe_payouts.amount for this driver"
+    - name: last_payout_date
+      type: string
+      description: Date of the driver's most recent payout.
+    - name: system
+      type: string
+      required: true
+      description: Source system this row came from
+
+primary_key: [driver_id]
+
+# Primary source: marketplace driver profiles (the canonical entity).
+# NOTE: This path resolves cleanly in the local_polars env (storage_root =
+# ./lakehouse_polars). For Azure dev/prod, swap to the per-domain container:
+#   abfss://marketplace@{storage_account}.dfs.core.windows.net/silver/...
+source:
+  type: table
+  path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_driver_profiles"
+  # Stays full (deliberate): an aggregate over its sources. An incremental batch
+  # holds only new rows, so re-grouping it would overwrite a complete aggregate
+  # with a partial one; the engine has no recompute-affected-keys mode.
+  load_mode: full
+
+# Cross-domain enrichment via joins. Each `reference` must be reachable from
+# the catalog at materialization time.
+transformations:
+  # Read every table as a physical LINK (source/src is projected to model
+  # field names before the pre-SQL, which would drop `name`, etc.).
+  - phase: pre
+    sql: |
+      WITH pd AS (
+        SELECT driver_id,
+               SUM(CAST(amount AS double)) AS lifetime_payout_amount,
+               MAX(arrival_date)           AS last_payout_date
+        FROM silver_stripe_payouts GROUP BY driver_id
+      ),
+      cv AS (
+        SELECT driver_id, status, completed_at,
+               ROW_NUMBER() OVER (PARTITION BY driver_id ORDER BY completed_at DESC) AS rn
+        FROM silver_checkr_background_checks
+      )
+      SELECT d.driver_id                              AS driver_id,
+             d.name                                   AS full_name,
+             d.email                                  AS email,
+             d.city_code                              AS city_code,
+             d.status                                 AS status,
+             CAST(d.rating AS double)                 AS rating,
+             COALESCE(cv.status, 'unverified')        AS verification_status,
+             cv.completed_at                          AS verification_completed_at,
+             COALESCE(pd.lifetime_payout_amount, 0.0) AS lifetime_payout_amount,
+             CAST(pd.last_payout_date AS string)      AS last_payout_date,
+             'rideflow'                               AS system
+      FROM mp_drivers d
+      LEFT JOIN (SELECT * FROM cv WHERE rn = 1) cv ON cv.driver_id = d.driver_id
+      LEFT JOIN pd ON pd.driver_id = d.driver_id
+
+quality:
+  row_rules: []
+  dataset_rules:
+    - unique: driver_id
+
+materialization:
+  strategy: overwrite
+  format: delta
+
+# Cross-domain link registrations — each join `reference` resolves to a
+# registered UC table view. Cross-schema reads (no ADLS in this demo).
+links:
+  - name: mp_drivers
+    type: table
+    path: "table:`{domain_catalog_prefix}_marketplace`.silver.silver_rideflow_driver_profiles"
+  - name: silver_checkr_background_checks
+    type: table
+    path: "table:`{domain_catalog_prefix}_operations`.silver.silver_checkr_background_checks"
+  - name: silver_stripe_payouts
+    type: table
+    path: "table:`{domain_catalog_prefix}_payments`.silver.silver_stripe_payouts"
+
+downstream:
+  - type: semantic_model
+    name: "sm_rideflow_gold"
+    platform: powerbi
+    managed: false

@@ -1,0 +1,127 @@
+version: 1.0.0
+
+info:
+  title: Silver — Stripe Refunds
+  target_layer: silver
+  description: Refunds issued against customer payments, each one traceable back to
+    the original charge and to the rider whose payment was returned. Records the money
+    refunded and its currency, the refund's current state, and the reasons recorded
+    for why the money went back. Identifiers, amounts and dates are largely nullable
+    and the date is held as text, so the coverage and format still need confirming
+    with the source owner.
+  table_name: '{silver_layer}_stripe_refunds'
+  system: stripe
+  domain: payments
+
+model:
+  fields:
+  - name: refund_id
+    type: string
+    required: true
+    description: Unique identifier for this refund. Used to trace and reconcile individual
+      refunds across systems.
+  - name: charge_id
+    type: string
+    required: true
+    description: The original payment charge that this refund was issued against,
+      linking the refund back to the customer's payment.
+  - name: rider_id
+    type: string
+    required: true
+    description: The rider associated with the refunded payment, useful for customer-level
+      refund analysis.
+  - name: amount
+    type: decimal(10,2)
+    required: false
+    description: 'The monetary value refunded to the customer. Note: confirm the currency
+      and whether this is a major or minor unit before reporting totals.'
+  - name: currency
+    type: string
+    required: false
+    description: The currency in which the refund was issued, needed to interpret
+      the amount correctly.
+  - name: status
+    type: string
+    required: true
+    description: The current state of the refund (for example pending, succeeded or
+      failed), indicating whether the money has been returned.
+  - name: reason
+    type: string
+    required: false
+    description: The reason recorded for the refund, helping teams understand why
+      money was returned.
+  - name: refund_reason
+    type: string
+    required: false
+    description: An additional or alternate reason field for the refund. Confirm with
+      the source owner how it differs from 'reason' before relying on either.
+  - name: created_at
+    type: timestamp
+    required: true
+    description: When the refund was created. Stored as text, so confirm the date
+      format before using it in time-based reporting.
+
+primary_key:
+- refund_id
+
+quality:
+  row_rules:
+  - name: refund_id_not_null
+    sql: refund_id IS NOT NULL
+    category: completeness
+    description: refund_id is always present (never null).
+  - name: amount_range_min
+    sql: amount IS NULL OR amount >= 0
+    category: validity
+    description: amount is at least 0 when present.
+  - name: amount_range_max
+    sql: amount IS NULL OR amount <= 1000000
+    category: validity
+    description: amount is at most 1000000 when present.
+  - name: charge_id_not_null
+    sql: charge_id IS NOT NULL
+    category: completeness
+    description: charge_id is always present (never null).
+  - name: created_at_not_null
+    sql: created_at IS NOT NULL
+    category: completeness
+    description: created_at is always present (never null).
+  - name: currency_accepted_values
+    sql: currency IS NULL OR currency IN ('AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP',
+      'JPY', 'USD')
+    category: validity
+    description: 'currency is one of: AUD, CAD, CHF, CNY, EUR, GBP, JPY, USD when
+      present.'
+  - name: rider_id_not_null
+    sql: rider_id IS NOT NULL
+    category: completeness
+    description: rider_id is always present (never null).
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+
+transformations:
+- deduplicate:
+    by:
+    - refund_id
+    sort_by:
+    - created_at
+    order: desc
+
+dataset: silver_stripe_refunds
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_stripe_refunds
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

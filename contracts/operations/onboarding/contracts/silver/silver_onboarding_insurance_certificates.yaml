@@ -1,0 +1,64 @@
+version: 1.0.0
+
+info:
+  title: Silver — Onboarding Insurance Certificates
+  target_layer: silver
+  table_name: '{silver_layer}_onboarding_insurance_certificates'
+  system: onboarding
+  domain: operations
+
+model:
+  fields:
+  - name: file_path
+    type: string
+    required: false
+    description: Path of the source document in the landing volume.
+  - name: policy_reference
+    type: string
+    required: false
+    description: Insurer's policy reference.
+  - name: driver_id
+    type: string
+    required: true
+    description: RideFlow driver the record belongs to.
+  - name: registration_mark
+    type: string
+    required: false
+    description: Registration mark of the insured vehicle.
+  - name: cover_start
+    type: timestamp
+    required: false
+    description: Start of the insurance cover.
+  - name: cover_end
+    type: timestamp
+    required: false
+    description: End of the insurance cover.
+  - name: policyholder_name
+    type: string
+    required: false
+    description: Name of the policyholder on the certificate.
+  - name: use
+    type: string
+    required: false
+    description: Permitted use of the insured vehicle, as stated on the certificate.
+
+materialization:
+  strategy: overwrite
+
+quality:
+  row_rules:
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+
+dataset: silver_onboarding_insurance_certificates
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_onboarding_insurance_certificates
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

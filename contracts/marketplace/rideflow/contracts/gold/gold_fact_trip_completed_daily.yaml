@@ -1,0 +1,125 @@
+version: 1.0.0
+
+info:
+  data_product: trip_performance
+  data_product_output: fact_trip_daily_kpis
+  title: Gold — Fact Trip Completed Daily
+  target_layer: gold
+  description: Daily totals of completed rides from the rideflow system, covering
+    fares charged to riders before tips, tips added, distance travelled and time spent,
+    alongside the average surge multiplier applied and the average ratings drivers
+    and riders gave each other. Each row is one calendar day, with a numeric day key
+    for joining to a date calendar and a field recording which source system the record
+    came from.
+  table_name: '{gold_layer}_fact_trip_completed_daily'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: activity_date
+    type: date
+    required: true
+    description: The calendar day these trip totals cover; one row per day.
+  - name: total_fare_amount
+    type: decimal(10,2)
+    required: false
+    description: Total fare charged to riders for completed trips on this day, before
+      tips.
+  - name: total_tip_amount
+    type: decimal(10,2)
+    required: false
+    description: Total tips riders added to completed trips on this day.
+  - name: total_distance_km
+    type: float
+    required: false
+    description: Combined distance travelled across completed trips on this day, in
+      kilometres.
+  - name: total_duration_minutes
+    type: integer
+    required: false
+    description: Combined time riders spent on completed trips on this day, in minutes.
+  - name: avg_rider_rating
+    type: float
+    required: false
+    description: Average rating drivers gave riders for completed trips on this day.
+  - name: date_key
+    type: integer
+    required: false
+    foreign_key:
+      contract: gold_dim_date
+      column: date_key
+    description: The day of activity_date as YYYYMMDD — the key of the date dimension.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_trip_completed_daily
+
+primary_key:
+- activity_date
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - activity_date
+      name: activity_date_unique
+      category: uniqueness
+      description: No two rows share the same activity_date.
+
+transformations:
+- phase: pre
+  sql: |-
+    WITH touched AS (
+      SELECT DISTINCT
+        CAST(dropoff_at AS DATE) AS _touched_0
+      FROM source
+    ),
+    r AS (
+      SELECT
+        CAST(dropoff_at AS DATE) AS activity_date,
+        SUM(fare_amount) AS total_fare_amount,
+        SUM(tip_amount) AS total_tip_amount,
+        SUM(distance_km) AS total_distance_km,
+        SUM(duration_minutes) AS total_duration_minutes,
+        AVG(rider_rating) AS avg_rider_rating
+      FROM silver_rideflow_trip_completed_full
+      JOIN touched
+        ON CAST(dropoff_at AS DATE) = touched._touched_0
+      GROUP BY CAST(dropoff_at AS DATE)
+    )
+    SELECT
+      r.activity_date,
+      r.total_fare_amount,
+      r.total_tip_amount,
+      r.total_distance_km,
+      r.total_duration_minutes,
+      r.avg_rider_rating,
+      CAST(EXTRACT(YEAR FROM r.activity_date) AS BIGINT) * 10000 + CAST(EXTRACT(MONTH FROM r.activity_date) AS BIGINT) * 100 + CAST(EXTRACT(DAY FROM r.activity_date) AS BIGINT) AS date_key
+    FROM r
+- phase: pre
+  derive:
+    field: system
+    sql: '''rideflow'''
+
+links:
+- name: silver_rideflow_trip_completed_full
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_trip_completed
+
+upstream: []
+
+materialization:
+  fact:
+    type: aggregate
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_rideflow_trip_completed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

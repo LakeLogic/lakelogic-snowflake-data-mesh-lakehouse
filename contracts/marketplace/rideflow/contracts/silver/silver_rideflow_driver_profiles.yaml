@@ -1,0 +1,162 @@
+version: 1.0.0
+
+info:
+  title: Silver — Rideflow Driver Profiles
+  target_layer: silver
+  description: Driver profiles for the Rideflow marketplace hold each driver's identity
+    and contact details — full name, email, phone, date of birth, home address, driving
+    licence number and vehicle registration plate — alongside the vehicle category
+    they operate and the last four digits of their payout bank account. Operational
+    fields record the city market they work in, when they signed up, their current
+    account status and their average customer rating, with a last-updated timestamp
+    showing how current each record is.
+  table_name: '{silver_layer}_rideflow_driver_profiles'
+  system: rideflow
+  domain: marketplace
+
+model:
+  fields:
+  - name: driver_id
+    type: string
+    required: true
+    description: Unique identifier for each driver on the marketplace platform. Used
+      to link driver profiles to their trips, payouts and support records.
+  - name: name
+    type: string
+    required: false
+    pii: true
+    classification: person_name
+    description: The driver's full name as provided at signup. Used for identification
+      and communication with the driver.
+  - name: email
+    type: string
+    required: false
+    pii: true
+    classification: email
+    description: The driver's contact email address. Used for account notices, trip
+      updates and platform communication.
+  - name: phone
+    type: string
+    required: false
+    pii: true
+    classification: phone
+    description: The driver's contact phone number. Used for trip coordination and
+      account verification.
+  - name: date_of_birth
+    type: string
+    required: false
+    pii: true
+    classification: date_of_birth
+    description: The driver's date of birth. Used to confirm the driver meets the
+      minimum age requirement to drive.
+  - name: home_address
+    type: string
+    required: false
+    pii: true
+    classification: postal_address
+    description: The driver's residential address. Used for onboarding checks and
+      official correspondence.
+  - name: licence_number
+    type: string
+    required: false
+    pii: true
+    classification: licence_id
+    description: The driver's driving licence number. Used to verify the driver is
+      legally permitted to drive.
+  - name: licence_plate
+    type: string
+    required: false
+    pii: true
+    classification: licence_plate
+    description: The registration plate of the vehicle the driver uses. Used to match
+      the driver to the correct vehicle on trips.
+  - name: vehicle_type
+    type: string
+    required: false
+    description: The category of vehicle the driver operates, such as car or motorbike.
+      Helps match drivers to the right ride requests.
+  - name: bank_account_last_four
+    type: string
+    required: false
+    sensitive: true
+    classification: financial_account
+    description: The last four digits of the driver's bank account. Used to confirm
+      payout details without exposing the full account number.
+  - name: city_code
+    type: string
+    required: false
+    description: Short code for the city where the driver operates. Used to group
+      drivers by market for reporting and operations.
+  - name: signup_date
+    type: date
+    required: false
+    description: The date the driver joined the platform. Used to track driver tenure
+      and onboarding trends.
+  - name: status
+    type: string
+    required: true
+    description: The driver's current account state, such as active or suspended.
+      Determines whether the driver can accept trips.
+  - name: rating
+    type: float
+    required: false
+    description: The driver's average customer rating. Used to monitor service quality
+      and driver performance.
+  - name: updated_at
+    type: timestamp
+    required: false
+    description: The date and time the driver's profile was last changed. Used to
+      track how current the record is.
+
+primary_key:
+- driver_id
+
+quality:
+  row_rules:
+  - name: driver_id_not_null
+    sql: driver_id IS NOT NULL
+    category: completeness
+    description: driver_id is always present (never null).
+  - name: rating_range_min
+    sql: rating IS NULL OR rating >= 0
+    category: validity
+    description: rating is at least 0 when present.
+  - name: rating_range_max
+    sql: rating IS NULL OR rating <= 5
+    category: validity
+    description: rating is at most 5 when present.
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+  - name: vehicle_type_accepted_values
+    sql: vehicle_type IS NULL OR vehicle_type IN ('basic', 'enterprise', 'premium',
+      'pro', 'standard')
+    category: validity
+    description: 'vehicle_type is one of: basic, enterprise, premium, pro, standard
+      when present.'
+
+transformations:
+- deduplicate:
+    by:
+    - driver_id
+    sort_by:
+    - updated_at
+    order: desc
+
+dataset: silver_rideflow_driver_profiles
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_rideflow_driver_profiles
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

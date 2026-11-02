@@ -1,0 +1,68 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Result
+  target_layer: gold
+  description: 'grain: one row per result'
+  table_name: '{gold_layer}_dim_result'
+  system: checkr
+  domain: operations
+
+model:
+  fields:
+  - name: result_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: result
+    type: string
+    required: true
+    description: The overall outcome of the background check, showing whether the
+      screening found any records of concern.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_result
+
+primary_key:
+- result
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - result
+      name: result_unique
+      category: uniqueness
+      description: No two rows share the same result.
+
+materialization:
+  scd1:
+    surrogate_key: result_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT result
+    FROM source
+    WHERE result IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''checkr'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_checkr_background_checks
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

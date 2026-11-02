@@ -1,0 +1,141 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Payouts
+  target_layer: gold
+  description: Payouts sent from Stripe to drivers' bank accounts, each identified
+    by a unique reference and carrying the amount paid out in the payout currency
+    along with its current state, such as pending, paid or failed. Records show when
+    the payout was initiated, the date the money is expected to or did reach the bank
+    account, and the source system it came from, so each transfer can be traced and
+    reconciled end to end. Amounts are linked to their currency details and each payout
+    is tied to a driver profile, with placeholders used where the driver or currency
+    is not recognised.
+  table_name: '{gold_layer}_fact_payouts'
+  system: stripe
+  domain: payments
+
+model:
+  fields:
+  - name: payout_id
+    type: string
+    required: true
+    description: Unique reference for a single payout sent from Stripe to a bank account.
+      Used to trace and reconcile each payout end to end.
+  - name: payout_amount
+    type: decimal(18,2)
+    required: false
+    description: The total amount paid out in this payout, in the payout currency.
+  - name: created_at
+    type: timestamp
+    required: false
+    description: The date and time the payout record was created. Marks when the payout
+      was initiated.
+  - name: arrival_date
+    type: date
+    required: false
+    description: The date the payout is expected to or did arrive in the bank account.
+      Used for cash-flow and reconciliation tracking.
+  - name: driver_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_driver_profiles
+      column: driver_profiles_sk
+    description: Surrogate key of gold_dim_driver_profiles, looked up as of created_at;
+      '-1' when the dimension does not know the row.
+  - name: currency_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_currency
+      column: currency_sk
+    description: Surrogate key of gold_dim_currency, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: created_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `created_at`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_payouts
+
+primary_key:
+- payout_id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - payout_id
+      name: payout_id_unique
+      category: uniqueness
+      description: No two rows share the same payout_id.
+  - name: driver_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE driver_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose driver_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: currency_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE currency_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose currency_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.payout_id,
+      r.created_at,
+      r.arrival_date,
+      r.amount AS payout_amount,
+      COALESCE(d1.driver_profiles_sk, '-1') AS driver_sk,
+      COALESCE(d2.currency_sk, '-1') AS currency_sk,
+      CAST(r.created_at AS DATE) AS created_date
+    FROM source r
+    LEFT JOIN gold_dim_driver_profiles d1
+      ON  r.driver_id = d1.driver_id
+      AND r.created_at >= d1.effective_from
+      AND r.created_at < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_currency d2
+      ON  r.currency = d2.currency_code
+- phase: pre
+  derive:
+    field: system
+    sql: '''stripe'''
+
+links:
+- name: gold_dim_driver_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_driver_profiles
+- name: gold_dim_currency
+  type: table
+  path: table:`{domain_catalog_prefix}_reference`.{gold_layer}.{gold_layer}_dim_currency
+
+upstream:
+- gold_dim_currency
+- gold_dim_driver_profiles
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+  partition_by:
+  - created_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_stripe_payouts
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

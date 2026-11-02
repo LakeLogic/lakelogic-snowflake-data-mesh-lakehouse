@@ -1,0 +1,169 @@
+version: 1.0.0
+
+dataset: gold_dim_date
+
+info:
+  data_product: reference_data
+  data_product_output: dim_date
+  title: Gold — Dim Date
+  table_name: '{gold_layer}_dim_date'
+  description: One row per calendar day from 2020-01-01 to 2030-12-31, built by LakeLogic's
+    date generator. Daily facts point at it through date_key (YYYYMMDD).
+  target_layer: gold
+  domain: reference
+  system: internal
+
+model:
+  fields:
+  - name: date_key
+    type: integer
+    description: Date as an integer in YYYYMMDD form; the dimension's key.
+    required: true
+  - name: full_date
+    type: date
+    description: The calendar date.
+    required: true
+  - name: year
+    type: integer
+    description: Calendar year.
+    required: false
+  - name: month
+    type: integer
+    description: "Month number (1\u201312)."
+    required: false
+  - name: day
+    type: integer
+    description: "Day of the month (1\u201331)."
+    required: false
+  - name: day_of_week
+    type: integer
+    description: Day of the week as a number.
+    required: false
+  - name: day_of_year
+    type: integer
+    description: "Day of the year (1\u2013366)."
+    required: false
+  - name: day_name
+    type: string
+    description: Full day name, such as Monday.
+    required: false
+  - name: day_abbrev
+    type: string
+    description: Short day name, such as Mon.
+    required: false
+  - name: month_name
+    type: string
+    description: Full month name, such as January.
+    required: false
+  - name: month_abbrev
+    type: string
+    description: Short month name, such as Jan.
+    required: false
+  - name: quarter
+    type: integer
+    description: "Calendar quarter (1\u20134)."
+    required: false
+  - name: year_quarter
+    type: string
+    description: Year and quarter, such as 2026-Q4.
+    required: false
+  - name: year_month
+    type: string
+    description: Year and month, such as 2026-10.
+    required: false
+  - name: iso_year
+    type: integer
+    description: ISO 8601 week-numbering year.
+    required: false
+  - name: iso_week
+    type: integer
+    description: ISO 8601 week number.
+    required: false
+  - name: iso_weekday
+    type: integer
+    description: ISO 8601 day of the week (1 = Monday).
+    required: false
+  - name: is_weekend
+    type: boolean
+    description: Whether the date falls on a weekend.
+    required: false
+  - name: is_business_day
+    type: boolean
+    description: Whether the date is a business day.
+    required: false
+  - name: is_holiday
+    type: boolean
+    description: Whether the date is a public holiday.
+    required: false
+  - name: holiday_name
+    type: string
+    description: Name of the public holiday, when the date is one.
+    required: false
+  - name: is_month_start
+    type: boolean
+    description: Whether the date is the first day of its month.
+    required: false
+  - name: is_month_end
+    type: boolean
+    description: Whether the date is the last day of its month.
+    required: false
+  - name: is_quarter_start
+    type: boolean
+    description: Whether the date is the first day of its quarter.
+    required: false
+  - name: is_quarter_end
+    type: boolean
+    description: Whether the date is the last day of its quarter.
+    required: false
+  - name: is_year_start
+    type: boolean
+    description: Whether the date is the first day of its year.
+    required: false
+  - name: is_year_end
+    type: boolean
+    description: Whether the date is the last day of its year.
+    required: false
+  - name: fiscal_year
+    type: integer
+    description: Fiscal year.
+    required: false
+  - name: fiscal_quarter
+    type: integer
+    description: Quarter within the fiscal year.
+    required: false
+  - name: fiscal_month
+    type: integer
+    description: Month number within the fiscal year.
+    required: false
+  - name: fiscal_year_quarter
+    type: string
+    description: Fiscal year and quarter.
+    required: false
+
+primary_key:
+- date_key
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - date_key
+      name: date_key_unique
+      category: uniqueness
+      description: No two rows share the same date_key.
+
+source:
+  type: landing
+  path: '{landing_root}/dim_date_seed'
+  format: csv
+  load_mode: full
+
+external_logic:
+  type: python
+  engine: spark
+  path: ../../_generators/dim_date.py
+  entrypoint: run
+  args:
+    start_date: '2020-01-01'
+    end_date: '2030-12-31'
+    fiscal_year_start_month: 1

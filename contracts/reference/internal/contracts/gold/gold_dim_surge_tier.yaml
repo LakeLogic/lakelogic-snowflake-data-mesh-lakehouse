@@ -1,0 +1,79 @@
+version: 1.0.0
+
+info:
+  data_product: reference_data
+  data_product_output: dim_surge_tier
+  title: Gold — Dim Surge Tier
+  target_layer: gold
+  description: Pricing surge tiers from the reference list, each identified by a short
+    code that links surge pricing rules to the correct tier. Records carry the source
+    system they originated from so their provenance can be traced, and a generated
+    identifier marks a placeholder where no matching tier is known.
+  table_name: '{gold_layer}_dim_surge_tier'
+  system: internal
+  domain: reference
+
+model:
+  fields:
+  - name: surge_tier_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: surge_tier_code
+    type: string
+    required: true
+    description: Short code identifying a pricing surge tier used in the reference
+      list. Used to link surge pricing rules to the correct tier.
+  - name: multiplier_min
+    type: float
+    required: false
+    description: Lowest price multiplier applied when this surge tier is in effect.
+      Defines the starting point of the tier's pricing range.
+  - name: multiplier_max
+    type: float
+    required: false
+    description: Highest price multiplier applied when this surge tier is in effect.
+      Defines the upper bound of the tier's pricing range.
+  - name: display_label
+    type: string
+    required: false
+    description: Human-readable name shown for this surge tier in customer-facing
+      or internal displays. Helps staff and customers recognise the tier.
+  - name: notify_rider
+    type: boolean
+    required: false
+    description: Indicates whether riders should be notified when this surge tier
+      applies. Supports customer communication decisions.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_surge_tier
+
+primary_key:
+- surge_tier_code
+
+materialization:
+  scd1:
+    surrogate_key: surge_tier_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_internal_dim_surge_tier_seed
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
+
+transformations:
+- phase: pre
+  derive:
+    field: system
+    sql: '''internal'''

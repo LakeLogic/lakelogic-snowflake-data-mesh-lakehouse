@@ -1,0 +1,126 @@
+version: 1.0.0
+
+info:
+  title: Silver — Google Analytics App Events
+  target_layer: silver
+  description: App activity from Google Analytics, capturing the actions users take
+    in the app, such as opening it or making a purchase, along with when each action
+    happened down to the moment and the calendar day. Each record ties to an anonymous
+    device-level identifier, and where a user is signed in, to a customer identifier
+    that links their activity across devices. The data also carries device and operating
+    system details, country and city location, app version, and personal data in the
+    form of device and network addresses that are not currently masked, so access
+    should be limited.
+  table_name: '{silver_layer}_google_analytics_app_events'
+  system: google_analytics
+  domain: marketing
+
+model:
+  fields:
+  - name: event_name
+    type: string
+    required: true
+    description: The name of the app action a user performed, such as opening the
+      app or making a purchase. Used to understand which activities users engage in.
+  - name: event_timestamp
+    type: timestamp
+    required: false
+    description: The exact moment the event took place, recorded from the user's device.
+      Used to order activity and measure timing.
+  - name: event_date
+    type: date
+    required: false
+    description: The calendar date the event occurred, used for daily reporting and
+      trend comparisons.
+  - name: user_pseudo_id
+    type: string
+    required: true
+    description: An anonymous identifier assigned to a user's device or app install.
+      Lets us follow a user's journey without knowing who they are.
+  - name: user_id
+    type: string
+    required: false
+    description: The identifier for a signed-in user, when available. Links activity
+      across devices for known customers.
+  - name: device_id
+    type: string
+    required: false
+    pii: true
+    classification: device_id
+    description: A unique identifier for the user's device. Personal data that is
+      not currently masked, so access should be limited.
+  - name: ip_address
+    type: string
+    required: false
+    pii: true
+    classification: ip_address
+    description: The network address the user connected from. Personal data that is
+      not currently masked, so access should be limited.
+  - name: device_category
+    type: string
+    required: false
+    description: The type of device used, such as mobile, tablet or desktop. Helps
+      compare behaviour across device types.
+  - name: device_os
+    type: string
+    required: false
+    description: The operating system of the user's device, such as iOS or Android.
+      Useful for spotting platform-specific issues.
+  - name: geo_country
+    type: string
+    required: false
+    description: The country the user was in when the event happened. Supports regional
+      reporting and market analysis.
+  - name: geo_city
+    type: string
+    required: false
+    description: The city the user was in when the event happened. Gives a more local
+      view of where activity comes from.
+  - name: app_version
+    type: string
+    required: false
+    description: The version of the app the user was running. Helps assess how releases
+      affect user behaviour.
+  - name: event_params_json
+    type: string
+    required: false
+    description: Additional details attached to the event, stored together as a single
+      record. Holds extra context that varies by event type.
+
+materialization:
+  strategy: overwrite
+  partition_by:
+  - geo_country
+
+quality:
+  row_rules:
+  - name: device_category_accepted_values
+    sql: device_category IS NULL OR device_category IN ('Automotive', 'Books', 'Clothing',
+      'Electronics', 'Finance', 'Food', 'Health', 'Home', 'Sports', 'Travel')
+    category: validity
+    description: 'device_category is one of: Automotive, Books, Clothing, Electronics,
+      Finance, Food, Health, Home, Sports, Travel when present.'
+  - name: device_os_accepted_values
+    sql: device_os IS NULL OR device_os IN ('Android', 'Linux', 'Windows', 'iOS',
+      'macOS')
+    category: validity
+    description: 'device_os is one of: Android, Linux, Windows, iOS, macOS when present.'
+  - name: event_name_not_null
+    sql: event_name IS NOT NULL
+    category: completeness
+    description: event_name is always present (never null).
+  - name: user_pseudo_id_not_null
+    sql: user_pseudo_id IS NOT NULL
+    category: completeness
+    description: user_pseudo_id is always present (never null).
+
+dataset: silver_google_analytics_app_events
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_google_analytics_app_events
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

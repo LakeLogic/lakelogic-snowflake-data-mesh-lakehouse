@@ -1,0 +1,141 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Insurance Certificates
+  target_layer: gold
+  description: 'grain: one row per insurance certificate issued to a driver'
+  table_name: '{gold_layer}_fact_insurance_certificates'
+  system: onboarding
+  domain: operations
+
+model:
+  fields:
+  - name: policy_reference
+    type: string
+    required: true
+    description: Insurer's policy reference.
+  - name: driver_id
+    type: string
+    required: false
+    description: RideFlow driver the record belongs to.
+  - name: registration_mark
+    type: string
+    required: false
+    description: Registration mark of the insured vehicle.
+  - name: cover_start
+    type: timestamp
+    required: false
+    description: Start of the insurance cover.
+  - name: cover_end
+    type: timestamp
+    required: false
+    description: End of the insurance cover.
+  - name: use
+    type: string
+    required: false
+    description: Permitted use of the insured vehicle, as stated on the certificate.
+  - name: driver_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_driver_profiles
+      column: driver_profiles_sk
+    description: Surrogate key of gold_dim_driver_profiles, looked up as of cover_start;
+      '-1' when the dimension does not know the row.
+  - name: use_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_use
+      column: use_sk
+    description: Surrogate key of gold_dim_use, looked up on its business key; '-1'
+      when the dimension does not know the row.
+  - name: cover_start_date
+    type: date
+    required: false
+    description: 'Partition column: the calendar date of `cover_start`.'
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_insurance_certificates
+
+primary_key:
+- policy_reference
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - policy_reference
+      name: policy_reference_unique
+      category: uniqueness
+      description: No two rows share the same policy_reference.
+  - name: driver_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE driver_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose driver_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: use_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE use_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose use_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.policy_reference,
+      r.driver_id,
+      r.registration_mark,
+      r.cover_start,
+      r.cover_end,
+      r.use,
+      COALESCE(d1.driver_profiles_sk, '-1') AS driver_sk,
+      COALESCE(d2.use_sk, '-1') AS use_sk,
+      CAST(r.cover_start AS DATE) AS cover_start_date
+    FROM source r
+    LEFT JOIN gold_dim_driver_profiles d1
+      ON  r.driver_id = d1.driver_id
+      AND r.cover_start >= d1.effective_from
+      AND r.cover_start < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_use d2
+      ON  r.use = d2.use
+- phase: pre
+  derive:
+    field: system
+    sql: '''onboarding'''
+
+links:
+- name: gold_dim_driver_profiles
+  type: table
+  path: table:`{domain_catalog_prefix}_marketplace`.{gold_layer}.{gold_layer}_dim_driver_profiles
+- name: gold_dim_use
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_use
+
+upstream:
+- gold_dim_driver_profiles
+- gold_dim_use
+
+materialization:
+  strategy: append
+  fact:
+    type: factless
+  partition_by:
+  - cover_start_date
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_onboarding_insurance_certificates
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

@@ -1,0 +1,72 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Priority (Zendesk)
+  target_layer: gold
+  description: Priority levels used to sort and route support tickets by importance,
+    such as low, normal, high or urgent, drawn from Zendesk and tagged with the source
+    system each record came from. Each record carries a unique identifier for linking
+    to related data elsewhere, including a placeholder for tickets whose priority
+    is unknown.
+  table_name: '{gold_layer}_zendesk_dim_priority'
+  system: zendesk
+  domain: operations
+
+model:
+  fields:
+  - name: priority_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: priority
+    type: string
+    required: true
+    description: The priority level assigned to a support ticket, such as low, normal,
+      high, or urgent, used to sort and route work by importance.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_zendesk_dim_priority
+
+primary_key:
+- priority
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - priority
+      name: priority_unique
+      category: uniqueness
+      description: No two rows share the same priority.
+
+materialization:
+  scd1:
+    surrogate_key: priority_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT priority
+    FROM source
+    WHERE priority IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''zendesk'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_zendesk_support_tickets
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

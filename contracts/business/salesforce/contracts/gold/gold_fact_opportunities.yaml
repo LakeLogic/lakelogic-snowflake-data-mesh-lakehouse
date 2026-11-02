@@ -1,0 +1,151 @@
+version: 1.0.0
+
+info:
+  title: Gold — Fact Opportunities
+  target_layer: gold
+  description: 'grain: one row per Salesforce opportunity'
+  table_name: '{gold_layer}_fact_opportunities'
+  system: salesforce
+  domain: business
+
+model:
+  fields:
+  - name: Id
+    type: string
+    required: true
+    description: Salesforce record ID; unique per record.
+  - name: opportunity_amount
+    type: decimal(18,2)
+    required: false
+    description: Opportunity value.
+  - name: win_probability
+    type: float
+    required: false
+    description: Likelihood of winning the opportunity.
+  - name: CloseDate
+    type: date
+    required: false
+    description: Expected or actual close date of the opportunity.
+  - name: CreatedDate
+    type: timestamp
+    required: false
+    description: When the record was created in Salesforce.
+  - name: account_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_accounts
+      column: accounts_sk
+    description: Surrogate key of gold_dim_accounts, looked up as of CreatedDate;
+      '-1' when the dimension does not know the row.
+  - name: StageName_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_stage_name
+      column: StageName_sk
+    description: Surrogate key of gold_dim_stage_name, looked up on its business key;
+      '-1' when the dimension does not know the row.
+  - name: LeadSource_sk
+    type: string
+    required: true
+    foreign_key:
+      contract: gold_dim_lead_source
+      column: LeadSource_sk
+    description: Surrogate key of gold_dim_lead_source, looked up on its business
+      key; '-1' when the dimension does not know the row.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_fact_opportunities
+
+primary_key:
+- Id
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - Id
+      name: Id_unique
+      category: uniqueness
+      description: No two rows share the same Id.
+  - name: account_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE account_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose account_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: StageName_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE StageName_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose StageName_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+  - name: LeadSource_sk_unknown_member_rows
+    sql: SELECT COUNT(*) FROM {dataset} WHERE LeadSource_sk = '-1'
+    must_be_less_than: 1
+    severity: warning
+    category: consistency
+    description: Rows whose LeadSource_sk fell back to the unknown member — the dimension
+      did not know them when this fact ran.
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT
+      r.Id,
+      r.CloseDate,
+      r.CreatedDate,
+      r.Amount AS opportunity_amount,
+      r.Probability AS win_probability,
+      COALESCE(d1.accounts_sk, '-1') AS account_sk,
+      COALESCE(d2.StageName_sk, '-1') AS StageName_sk,
+      COALESCE(d3.LeadSource_sk, '-1') AS LeadSource_sk
+    FROM source r
+    LEFT JOIN gold_dim_accounts d1
+      ON  r.AccountId = d1.Id
+      AND r.CreatedDate >= d1.effective_from
+      AND r.CreatedDate < COALESCE(d1.effective_to, CAST('9999-12-31 00:00:00' AS TIMESTAMP))
+    LEFT JOIN gold_dim_stage_name d2
+      ON  r.StageName = d2.StageName
+    LEFT JOIN gold_dim_lead_source d3
+      ON  r.LeadSource = d3.LeadSource
+- phase: pre
+  derive:
+    field: system
+    sql: '''salesforce'''
+
+links:
+- name: gold_dim_accounts
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_accounts
+- name: gold_dim_stage_name
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_stage_name
+- name: gold_dim_lead_source
+  type: table
+  path: table:{gold_root}.{gold_layer}_dim_lead_source
+
+upstream:
+- gold_dim_accounts
+- gold_dim_lead_source
+- gold_dim_stage_name
+
+materialization:
+  strategy: append
+  fact:
+    type: transaction
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_salesforce_opportunities
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

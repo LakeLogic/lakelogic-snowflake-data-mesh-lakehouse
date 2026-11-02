@@ -1,0 +1,128 @@
+version: 1.0.0
+
+info:
+  title: Silver — Twilio Sms Logs
+  target_layer: silver
+  description: Individual text messages sent and received through Twilio, each traced
+    by a unique message identifier and captured with its full text content, direction,
+    and delivery status from queued through to delivered or failed. The records carry
+    personal contact data in the form of recipient and sender phone numbers, along
+    with per-message charges and their currency basis for cost tracking and billing
+    reconciliation. Timestamps for sending and confirmed delivery, plus failure codes
+    where messages did not arrive, support measurement of delivery speed and diagnosis
+    of problems.
+  table_name: '{silver_layer}_twilio_sms_logs'
+  system: twilio
+  domain: operations
+
+model:
+  fields:
+  - name: message_sid
+    type: string
+    required: true
+    description: Unique identifier for this text message, used to trace it across
+      systems and support requests.
+  - name: recipient_phone
+    type: string
+    required: false
+    pii: true
+    classification: phone
+    description: Phone number the message was sent to. Personal contact data, so handle
+      with privacy care.
+  - name: sender_phone
+    type: string
+    required: false
+    pii: true
+    classification: phone
+    description: Phone number the message was sent from. Personal contact data, so
+      handle with privacy care.
+  - name: message_body
+    type: string
+    required: false
+    description: The actual text content of the message as sent or received.
+  - name: status
+    type: string
+    required: true
+    description: Current delivery state of the message, such as queued, sent, delivered
+      or failed.
+  - name: direction
+    type: string
+    required: false
+    description: Whether the message was outbound (sent by us) or inbound (received
+      from a customer).
+  - name: num_segments
+    type: string
+    required: false
+    description: How many message parts the text was split into for delivery, which
+      affects cost and completeness.
+  - name: price
+    type: decimal(10,2)
+    required: false
+    description: Amount charged for this message, used for cost tracking and billing
+      reconciliation.
+  - name: price_unit
+    type: string
+    required: false
+    description: Currency or unit basis for the message price, so costs are interpreted
+      correctly.
+  - name: sent_at
+    type: timestamp
+    required: false
+    description: Date and time the message was sent.
+  - name: delivered_at
+    type: timestamp
+    required: false
+    description: Date and time the message was confirmed delivered, useful for measuring
+      delivery speed.
+  - name: error_code
+    type: string
+    required: false
+    description: Code explaining why a message failed, if it did, to help diagnose
+      delivery problems.
+
+primary_key:
+- message_sid
+
+quality:
+  row_rules:
+  - name: message_sid_not_null
+    sql: message_sid IS NOT NULL
+    category: completeness
+    description: message_sid is always present (never null).
+  - name: price_range_min
+    sql: price IS NULL OR price >= 0
+    category: validity
+    description: price is at least 0 when present.
+  - name: price_range_max
+    sql: price IS NULL OR price <= 1000
+    category: validity
+    description: price is at most 1000 when present.
+  - name: status_not_null
+    sql: status IS NOT NULL
+    category: completeness
+    description: status is always present (never null).
+  - name: status_accepted_values
+    sql: status IS NULL OR status IN ('active', 'deleted', 'inactive', 'pending',
+      'suspended')
+    category: validity
+    description: 'status is one of: active, deleted, inactive, pending, suspended
+      when present.'
+
+transformations:
+- deduplicate:
+    by:
+    - message_sid
+    sort_by:
+    - sent_at
+    order: desc
+
+dataset: silver_twilio_sms_logs
+
+source:
+  type: table
+  path: table:{bronze_root}.{bronze_layer}_twilio_sms_logs
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'

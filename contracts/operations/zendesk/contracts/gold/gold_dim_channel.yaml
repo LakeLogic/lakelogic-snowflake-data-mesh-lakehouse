@@ -1,0 +1,72 @@
+version: 1.0.0
+
+info:
+  title: Gold — Dim Channel
+  target_layer: gold
+  description: A dimension of support channels, one row per channel such as email,
+    chat or phone, so that activity and performance can be compared across them. Each
+    record carries a surrogate key for linking to related data, with a special value
+    marking channels that are unknown, and a field tracing which source system the
+    record originated from.
+  table_name: '{gold_layer}_dim_channel'
+  system: zendesk
+  domain: operations
+
+model:
+  fields:
+  - name: channel_sk
+    type: string
+    required: false
+    description: 'Surrogate key: sha256 of the business key, written by the materializer;
+      ''-1'' is the unknown member.'
+  - name: channel
+    type: string
+    required: true
+    description: The support channel the record belongs to, such as email, chat, or
+      phone, letting teams compare activity and performance across channels.
+  - name: system
+    type: string
+    required: true
+    description: Source system this row came from
+
+dataset: gold_dim_channel
+
+primary_key:
+- channel
+
+quality:
+  dataset_rules:
+  - unique:
+      columns:
+      - channel
+      name: channel_unique
+      category: uniqueness
+      description: No two rows share the same channel.
+
+materialization:
+  scd1:
+    surrogate_key: channel_sk
+    surrogate_key_strategy: hash
+    unknown_member:
+      enabled: true
+      surrogate_key_value: '-1'
+
+transformations:
+- phase: pre
+  sql: |-
+    SELECT DISTINCT channel
+    FROM source
+    WHERE channel IS NOT NULL
+- phase: pre
+  derive:
+    field: system
+    sql: '''zendesk'''
+
+source:
+  type: table
+  path: table:{silver_root}.{silver_layer}_zendesk_support_tickets
+  load_mode: incremental
+  watermark_field: _lakelogic_processed_at
+
+metadata:
+  run_log_table: '{domain_catalog}.lakelogic_run_log'
