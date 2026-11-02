@@ -105,34 +105,70 @@ def _stage_location(path):
 
 
 def _stage_to_table(conn, path, fmt, entity):
-    """Load a landing folder on a stage into a temporary table and return its name.
+    """Load the NEW files of a landing folder into the contract's landing table; return
+    ``(table, rows_loaded)``.
+
+    The table is permanent (``<stage database>.<stage schema>.LL_LANDING_<ENTITY>``), so
+    ``COPY INTO`` skips every file Snowflake has already loaded into it (its load history,
+    kept 64 days): a run processes what arrived since the last one, as Spark's
+    ``available_now`` file stream does on Databricks and Fabric. A fresh temporary table per
+    run re-read the whole folder every time, so an appending Bronze table gained every file
+    again (2026-11-02). The table is emptied after a successful write (_clear_landing),
+    with DELETE so the load history is kept. ``LAKELOGIC_RELOAD_LANDING=1`` reloads every file.
 
     The snowflake engine reads TABLES; landing is files. Every column is loaded as text — the
     bronze contract casts — matched to the header by name, so a reordered file still lands.
     """
+    import os
+
     fmt = (fmt or "csv").lower()
     if fmt not in _FILE_FORMAT_SQL:
         raise ValueError(f"landing format {fmt!r} is not loaded on Snowflake (csv, json or parquet)")
     loc, pattern = _stage_location(path)
-    tmp = "LL_LANDING_" + "".join(ch if ch.isalnum() else "_" for ch in str(entity)).upper()
+    stage = loc.lstrip("@").split("/", 1)[0]                # DB.SCHEMA.STAGE
+    home = stage.rsplit(".", 1)[0] if stage.count(".") == 2 else None
+    name = "LL_LANDING_" + "".join(ch if ch.isalnum() else "_" for ch in str(entity)).upper()
+    table = f"{home}.{name}" if home else name
+    reload = os.environ.get("LAKELOGIC_RELOAD_LANDING", "").strip().lower() in ("1", "true", "yes")
     cur = conn.cursor()
     try:
-        cur.execute(f"CREATE OR REPLACE TEMPORARY FILE FORMAT {tmp}_FF {_FILE_FORMAT_SQL[fmt]}")
+        cur.execute(f"CREATE OR REPLACE TEMPORARY FILE FORMAT {name}_FF {_FILE_FORMAT_SQL[fmt]}")
         cols = [r[0] for r in cur.execute(
-            f"SELECT COLUMN_NAME FROM TABLE(INFER_SCHEMA(LOCATION => '{loc}', FILE_FORMAT => '{tmp}_FF'))"
+            f"SELECT COLUMN_NAME FROM TABLE(INFER_SCHEMA(LOCATION => '{loc}', FILE_FORMAT => '{name}_FF'))"
         ).fetchall()]
         if not cols:
             raise FileNotFoundError(f"no {fmt} files under {loc}")
         coldefs = ", ".join(f'"{c.upper()}" VARCHAR' for c in cols)
-        cur.execute(f"CREATE OR REPLACE TEMPORARY TABLE {tmp} ({coldefs})")
-        copy = (f"COPY INTO {tmp} FROM '{loc}' FILE_FORMAT = (FORMAT_NAME = '{tmp}_FF') "
+        cur.execute(f"CREATE TABLE IF NOT EXISTS {table} ({coldefs})")
+        have = {d[0] for d in cur.execute(f"SELECT * FROM {table} LIMIT 0").description}
+        for c in cols:
+            if c.upper() not in have:
+                cur.execute(f'ALTER TABLE {table} ADD COLUMN "{c.upper()}" VARCHAR')
+        if reload:
+            cur.execute(f"TRUNCATE TABLE {table}")
+        copy = (f"COPY INTO {table} FROM '{loc}' FILE_FORMAT = (FORMAT_NAME = '{name}_FF') "
                 "MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE ON_ERROR = CONTINUE")
         if pattern:
             copy += f" PATTERN = '{pattern}'"
+        if reload:
+            copy += " FORCE = TRUE"
         cur.execute(copy)
+        # Rows waiting: this run's new files, plus any a failed run left behind (retried now).
+        waiting = cur.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
     finally:
         cur.close()
-    return tmp
+    return table, int(waiting or 0)
+
+
+def _clear_landing(conn, table):
+    """Empty a landing table once its rows are written. DELETE, not TRUNCATE: TRUNCATE also
+    clears the table's load history, and every file loaded again on the next run (2026-11-02)."""
+    if table:
+        cur = conn.cursor()
+        try:
+            cur.execute(f"DELETE FROM {table}")
+        finally:
+            cur.close()
 
 
 def _stage_to_local(conn, path):
@@ -164,18 +200,25 @@ def _stamped(conn, table, cd):
         desc = list(cur.description)
     finally:
         cur.close()
-    out = []
+    from lakelogic.engines.snowflake import _column_type
+
+    out, cols = [], []
     for d in desc:
         kind = FIELD_ID_TO_NAME.get(d[1], "")
         if kind == "DATE":
             out.append(f"TO_VARCHAR(\"{d[0]}\", 'YYYY-MM-DD') AS \"{d[0]}\"")
+            cols.append((d[0], "VARCHAR"))
         elif kind.startswith("TIMESTAMP"):
             out.append(f"TO_VARCHAR(\"{d[0]}\", 'YYYY-MM-DD HH24:MI:SS') AS \"{d[0]}\"")
+            cols.append((d[0], "VARCHAR"))
         else:
             out.append(f'"{d[0]}"')
+            cols.append((d[0], _column_type(d)))
     if META_PROCESSED_AT.upper() not in {d[0].upper() for d in desc}:
         out.append(f"TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYY-MM-DD HH24:MI:SS') AS {META_PROCESSED_AT.upper()}")
-    return f"SELECT {', '.join(out)} FROM {table}"
+        cols.append((META_PROCESSED_AT.upper(), "VARCHAR"))
+    # The columns too, so the write does not look them up again.
+    return f"SELECT {', '.join(out)} FROM {table}", cols
 
 
 def _stamp_load_time(df):
@@ -240,6 +283,24 @@ def _topo(contracts):
     return ordered
 
 
+#: Worker sessions kept between layers (and systems) of one run; see run_layer.
+import atexit as _atexit
+import threading as _threading
+
+_SESSIONS: list = []
+_SESSIONS_LOCK = _threading.Lock()
+_CAN_CONNECT: dict = {}
+
+
+@_atexit.register
+def _close_sessions():
+    for c in _SESSIONS:
+        try:
+            c.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _container_connect():
     """A new session from inside Snowflake: a notebook on the container runtime runs as a
     service, which is given a login token at /snowflake/session/token."""
@@ -254,13 +315,17 @@ def _container_connect():
 
 
 def _can_connect(new_conn, log):
-    """Whether worker sessions can be opened here; if not, the layer runs one contract at a time."""
+    """Whether worker sessions can be opened here; if not, the layer runs one contract at a time.
+    Asked once per process."""
+    if new_conn in _CAN_CONNECT:
+        return _CAN_CONNECT[new_conn]
     try:
         new_conn().close()
-        return True
+        _CAN_CONNECT[new_conn] = True
     except Exception as exc:  # noqa: BLE001
         log(f"    (contracts run one at a time: no extra session available: {str(exc)[:120]})")
-        return False
+        _CAN_CONNECT[new_conn] = False
+    return _CAN_CONNECT[new_conn]
 
 
 def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev", connect=None):
@@ -289,9 +354,12 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev", con
     def _worker_conn():
         c = getattr(_tl, "c", None)
         if c is None:
-            c = new_conn()
-            for q in ([f"USE WAREHOUSE {wh}"] if wh else []) + ([f'USE DATABASE "{cdb}"'] if cdb else [])                     + ([f'USE SCHEMA "{cdb}"."{csch}"'] if cdb and csch else []):
-                c.cursor().execute(q)
+            with _SESSIONS_LOCK:
+                c = _SESSIONS.pop() if _SESSIONS else None
+            if c is None:
+                c = new_conn()
+                for q in ([f"USE WAREHOUSE {wh}"] if wh else []) + ([f'USE DATABASE "{cdb}"'] if cdb else [])                         + ([f'USE SCHEMA "{cdb}"."{csch}"'] if cdb and csch else []):
+                    c.cursor().execute(q)
             _tl.c = c
             opened.append(c)
         SnowflakeAdapter.set_shared_connection(c, this_thread=True)
@@ -323,35 +391,48 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev", con
             fields = (cd.get("model") or {}).get("fields") or []
             source_ref = _pd.DataFrame(columns=[f["name"] for f in fields])
         proc = None
+        landing = None
         try:
             fmt = str(src.get("format") or "").lower()
             if isinstance(source_ref, str) and source_ref.startswith("@"):
                 if fmt in _FILE_FORMATS:
                     source_ref, engine = _stage_to_local(conn, source_ref), "polars"
                 else:
-                    source_ref = _stage_to_table(conn, source_ref, fmt, rc.entity)
+                    landing, waiting = _stage_to_table(conn, source_ref, fmt, rc.entity)
+                    if not waiting:
+                        log(f"    {rc.entity:<42} {layer:<7} no new files")
+                        results.append((rc.entity, "ok", 0, 0))
+                        return results[0]
+                    source_ref = landing
             proc = DataProcessor(cd, engine=engine)
-            good, bad = proc.run(source_ref)
             strategy = str(((cd.get("materialization") or cd.get("write") or {}).get("strategy")) or "append").lower()
             adapter = getattr(proc, "adapter", None)
-            if engine == "snowflake" and strategy != "scd2" and getattr(adapter, "good_table", None):
+            in_place = engine == "snowflake" and strategy != "scd2" and hasattr(adapter, "write_in_place")
+            if in_place:
+                # Results stay in Snowflake and are counted there: written below, never read here.
+                adapter.keep_results_in_warehouse = True
+            good, bad = proc.run(source_ref)
+            if in_place and getattr(adapter, "good_table", None):
                 # IN PLACE: the results are already tables in this session. Written by the
                 # contract's own strategy (append / overwrite / merge on its primary key), and
                 # rejected rows appended to quarantine. The rows used to come to the driver and
                 # go back through write_pandas(overwrite=True): seven statements a table, and
                 # every strategy turned into an overwrite (2026-11-02).
-                ng = 0 if good is None else len(good)
-                nb = 0 if bad is None else len(bad)
+                counts = getattr(adapter, "deferred_counts", None) or {}
+                ng = int(counts.get("good", 0 if good is None else len(good)))
+                nb = int(counts.get("bad", 0 if bad is None else len(bad)))
                 if ng:
-                    adapter.write_in_place(conn, _stamped(conn, adapter.good_table, cd),
-                                           f'"{db}"."{schema}"."{table.upper()}"', strategy,
-                                           merge_keys=list(cd.get("primary_key") or []))
+                    sql, cols = _stamped(conn, adapter.good_table, cd)
+                    adapter.write_in_place(conn, sql, f'"{db}"."{schema}"."{table.upper()}"', strategy,
+                                           merge_keys=list(cd.get("primary_key") or []), columns=cols)
                 if nb:
                     _qname = str(getattr(reg.storage, "quarantine_table_name", None) or "quarantine_{table}")
-                    adapter.write_in_place(conn, _stamped(conn, adapter.bad_table, cd),
+                    sql, cols = _stamped(conn, adapter.bad_table, cd)
+                    adapter.write_in_place(conn, sql,
                                            f'"{q_db}"."{q_schema}"."{_qname.format(table=table, domain=schema.lower()).upper()}"',
-                                           "append")
+                                           "append", columns=cols)
                 log(f"    {rc.entity:<42} {layer:<7} good={ng:<6} quarantined={nb}")
+                _clear_landing(conn, landing)
                 results.append((rc.entity, "ok", ng, nb))
                 _log_run(proc, None, log, good=ng, quarantined=nb)
                 return results[0]
@@ -375,6 +456,7 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev", con
                              schema=q_schema, database=q_db, auto_create_table=True, overwrite=True,
                              quote_identifiers=False)
             log(f"    {rc.entity:<42} {layer:<7} good={ng:<6} quarantined={nb}")
+            _clear_landing(conn, landing)
             results.append((rc.entity, "ok", ng, nb))
             _log_run(proc, None, log, good=ng, quarantined=nb)
         except Exception as e:
@@ -403,9 +485,8 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev", con
             continue
         with ThreadPoolExecutor(max_workers=min(workers, len(batch))) as pool:
             results += list(pool.map(_one, batch))
-    for c in opened:
-        try:
-            c.close()
-        except Exception:  # noqa: BLE001 - closing a worker session never fails the layer
-            pass
+    # Back to the pool for the next layer: opening and setting up a session per worker per
+    # layer was ~80 statements a system (2026-11-02). Closed when the process ends.
+    with _SESSIONS_LOCK:
+        _SESSIONS.extend(opened)
     return results
