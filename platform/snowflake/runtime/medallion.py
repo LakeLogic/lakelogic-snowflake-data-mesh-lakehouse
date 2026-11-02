@@ -19,6 +19,7 @@ In a Snowflake Notebook:
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 
@@ -150,6 +151,33 @@ def _stage_to_local(conn, path):
     return os.path.join(local, tail).replace("\\", "/")
 
 
+def _stamped(conn, table, cd):
+    """SELECT over a result table that writes the way the frame path does: dates and timestamps
+    as ISO text (_coerce_datetimes) and the engine's load time when the row has none
+    (_stamp_load_time). Downstream layers read these tables as they always have."""
+    from lakelogic.core.constants import META_PROCESSED_AT
+    from snowflake.connector.constants import FIELD_ID_TO_NAME
+
+    cur = conn.cursor()
+    try:
+        cur.execute(f"SELECT * FROM {table} LIMIT 0")
+        desc = list(cur.description)
+    finally:
+        cur.close()
+    out = []
+    for d in desc:
+        kind = FIELD_ID_TO_NAME.get(d[1], "")
+        if kind == "DATE":
+            out.append(f"TO_VARCHAR(\"{d[0]}\", 'YYYY-MM-DD') AS \"{d[0]}\"")
+        elif kind.startswith("TIMESTAMP"):
+            out.append(f"TO_VARCHAR(\"{d[0]}\", 'YYYY-MM-DD HH24:MI:SS') AS \"{d[0]}\"")
+        else:
+            out.append(f'"{d[0]}"')
+    if META_PROCESSED_AT.upper() not in {d[0].upper() for d in desc}:
+        out.append(f"TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYY-MM-DD HH24:MI:SS') AS {META_PROCESSED_AT.upper()}")
+    return f"SELECT {', '.join(out)} FROM {table}"
+
+
 def _stamp_load_time(df):
     """Every written row carries the engine's load time (`_lakelogic_processed_at`), as the Spark
     write path stamps it on Databricks and Fabric. Silver deduplicates on it (latest wins), so a
@@ -212,7 +240,30 @@ def _topo(contracts):
     return ordered
 
 
-def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev"):
+def _container_connect():
+    """A new session from inside Snowflake: a notebook on the container runtime runs as a
+    service, which is given a login token at /snowflake/session/token."""
+    import snowflake.connector
+
+    with open("/snowflake/session/token") as f:
+        token = f.read()
+    return snowflake.connector.connect(
+        host=os.environ["SNOWFLAKE_HOST"], account=os.environ["SNOWFLAKE_ACCOUNT"],
+        authenticator="oauth", token=token, port=os.environ.get("SNOWFLAKE_PORT", 443),
+        protocol="https")
+
+
+def _can_connect(new_conn, log):
+    """Whether worker sessions can be opened here; if not, the layer runs one contract at a time."""
+    try:
+        new_conn().close()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log(f"    (contracts run one at a time: no extra session available: {str(exc)[:120]})")
+        return False
+
+
+def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev", connect=None):
     """Run + persist a single medallion layer for one system on `conn`.
 
     Returns a list of (entity, status, good_count, quarantined_count) tuples.
@@ -225,7 +276,32 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev"):
     SnowflakeAdapter.set_shared_connection(conn)   # engine runs on the caller's session
     reg = DomainRegistry.from_yaml(str(sys_yaml), environment=environment, storage_mode="catalog")
     results = []
-    for rc in _topo(reg.get_active_contracts(layer=layer)):
+    # One session per worker: the engine's temp views are session-wide (see _worker_conn).
+    new_conn = connect or _container_connect
+    import threading
+    _tl = threading.local()
+    cur = conn.cursor()
+    try:
+        wh, cdb, csch = cur.execute("SELECT CURRENT_WAREHOUSE(), CURRENT_DATABASE(), CURRENT_SCHEMA()").fetchone()
+    finally:
+        cur.close()
+
+    def _worker_conn():
+        c = getattr(_tl, "c", None)
+        if c is None:
+            c = new_conn()
+            for q in ([f"USE WAREHOUSE {wh}"] if wh else []) + ([f'USE DATABASE "{cdb}"'] if cdb else [])                     + ([f'USE SCHEMA "{cdb}"."{csch}"'] if cdb and csch else []):
+                c.cursor().execute(q)
+            _tl.c = c
+            opened.append(c)
+        SnowflakeAdapter.set_shared_connection(c, this_thread=True)
+        return c
+
+    opened = []
+
+    def _one(rc):
+        conn = _worker_conn() if parallel else outer_conn
+        results = []
         cd = rc.contract_dict or {}
         info = cd.get("info", {})
         table = (info.get("table_name") or rc.entity)
@@ -256,6 +332,29 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev"):
                     source_ref = _stage_to_table(conn, source_ref, fmt, rc.entity)
             proc = DataProcessor(cd, engine=engine)
             good, bad = proc.run(source_ref)
+            strategy = str(((cd.get("materialization") or cd.get("write") or {}).get("strategy")) or "append").lower()
+            adapter = getattr(proc, "adapter", None)
+            if engine == "snowflake" and strategy != "scd2" and getattr(adapter, "good_table", None):
+                # IN PLACE: the results are already tables in this session. Written by the
+                # contract's own strategy (append / overwrite / merge on its primary key), and
+                # rejected rows appended to quarantine. The rows used to come to the driver and
+                # go back through write_pandas(overwrite=True): seven statements a table, and
+                # every strategy turned into an overwrite (2026-11-02).
+                ng = 0 if good is None else len(good)
+                nb = 0 if bad is None else len(bad)
+                if ng:
+                    adapter.write_in_place(conn, _stamped(conn, adapter.good_table, cd),
+                                           f'"{db}"."{schema}"."{table.upper()}"', strategy,
+                                           merge_keys=list(cd.get("primary_key") or []))
+                if nb:
+                    _qname = str(getattr(reg.storage, "quarantine_table_name", None) or "quarantine_{table}")
+                    adapter.write_in_place(conn, _stamped(conn, adapter.bad_table, cd),
+                                           f'"{q_db}"."{q_schema}"."{_qname.format(table=table, domain=schema.lower()).upper()}"',
+                                           "append")
+                log(f"    {rc.entity:<42} {layer:<7} good={ng:<6} quarantined={nb}")
+                results.append((rc.entity, "ok", ng, nb))
+                _log_run(proc, None, log, good=ng, quarantined=nb)
+                return results[0]
             if engine == "polars":
                 good = None if good is None else good.to_pandas()
                 bad = None if bad is None else bad.to_pandas()
@@ -282,4 +381,31 @@ def run_layer(conn, database, sys_yaml, layer, log=print, environment="dev"):
             log(f"    {rc.entity:<42} {layer:<7} FAILED: {str(e)[:180]}")
             results.append((rc.entity, f"failed: {str(e)[:180]}", 0, 0))
             _log_run(proc, e, log)
+        return results[0]
+
+    # Contracts that do not depend on each other within the layer run at the same time, on
+    # the one session. Each statement costs ~0.3 s whatever the row count, so run one by one a
+    # 9-contract layer took ~65 s; in waves it takes about as long as its slowest contract.
+    contracts = _topo(reg.get_active_contracts(layer=layer))
+    names = {c.entity for c in contracts}
+    level = {}
+    for c in contracts:  # _topo order: a contract's dependencies come before it
+        level[c.entity] = 1 + max([level[d] for d in (c.depends_on or []) if d in names] or [-1])
+    workers = max(1, int(os.environ.get("LAKELOGIC_PARALLEL_CONTRACTS", "8")))
+    outer_conn = conn
+    parallel = workers > 1 and new_conn is not None and _can_connect(new_conn, log)
+    from concurrent.futures import ThreadPoolExecutor
+    results = []
+    for wave in sorted(set(level.values())):
+        batch = [c for c in contracts if level[c.entity] == wave]
+        if not parallel:
+            results += [_one(c) for c in batch]
+            continue
+        with ThreadPoolExecutor(max_workers=min(workers, len(batch))) as pool:
+            results += list(pool.map(_one, batch))
+    for c in opened:
+        try:
+            c.close()
+        except Exception:  # noqa: BLE001 - closing a worker session never fails the layer
+            pass
     return results
